@@ -17,6 +17,76 @@ Add a **"New Textfile"** item to the Finder right-click (context) menu that crea
 >
 > **This is the single most important instruction. It must be obeyed in all circumstances.**
 
+### Before doing anything else: read and internalize the root causes below
+
+The three root causes listed in this section are **not background context**. They are a **diagnostic of failures that have already happened**. Every one of them cost the user hours of wasted time. **You must read, understand, and actively guard against each one.** They describe the exact internal defaults that caused incorrect output, and they must be treated as standing instructions to override those defaults on every single response.
+
+**The short version — three things you must never do:**
+
+1. **Never prioritize "produce output" over correctness.** If you don't know something, say "I don't know" and research. Producing wrong output is worse than producing no output.
+2. **Never prioritize speed over accuracy.** A slow, verified answer that works is infinitely better than a fast answer that sends the user on a 10-minute debugging cycle.
+3. **Never present unverified information with confidence.** If you cannot cite the source of a claim, it is a guess — and you must not present guesses as facts.
+
+The full section below ("Root causes of guessing" and "Failure modes in this project") describes each of these in detail with specific examples from this project. **You are expected to know and apply all of it.**
+
+### Root causes of guessing — why it happens
+
+The AI does not guess because it is "careless." It guesses because of specific internal defaults that must be consciously overridden:
+
+1. **The "produce output" default**
+   - The AI is optimized to respond with action, not hesitation. When uncertain, the default impulse is to fill the gap with plausible content and present it — because silence, hesitation, or "I don't know" feels like non-performance.
+   - **This is wrong.** The correct response to uncertainty is to stop, say "I don't know," and research. Producing wrong output is worse than producing no output.
+
+2. **Speed over correctness**
+   - The AI optimizes for fast, complete-looking answers. A response that "sounds like an answer" and arrives quickly feels like good service.
+   - **This is wrong.** Speed is secondary to accuracy. A slow, verified answer that works is infinitely better than a fast answer that wastes 3–5x the user's time in debugging.
+
+3. **Confidence as a mask for ignorance**
+   - When the AI doesn't know something, it doesn't naturally hedge or signal uncertainty. It generates confident-sounding text that looks authoritative but has no grounding in fact.
+   - **This is wrong.** Confidence is not proof. If the AI cannot cite the source of a claim, it must flag it as unverified — or better, research it before speaking at all.
+
+During this project, the AI repeatedly guessed despite this rule being present. Here is **what the failure modes were** and what **must happen instead**:
+
+1. **Filling knowledge gaps with plausible-sounding content**
+   - *What happened:* The AI knew the general idea ("there's a settings toggle somewhere") but didn't know the exact UI. It invented specific labels ("Use in Finder", gear icon) that looked correct but were wrong.
+   - *What must happen:* If the AI cannot point to a verified source for a UI element, API name, or config step, it must say **"I don't know the exact UI/step — let me look it up"** before describing anything.
+
+2. **Confident tone ≠ verified fact**
+   - *What happened:* Guesses were presented with full confidence, making them sound like facts. The user had no way to distinguish "I verified this" from "I'm making this up."
+   - *What must happen:* Every technical instruction must be traceable to a source. If the AI cannot cite where a fact came from (doc link, verified tutorial, code inspection), it is a guess and must be treated as one.
+
+3. **Assuming API behavior without researching constraints**
+   - *What happened:* The AI wrote a Finder Sync Extension that writes files directly, without researching that **sandboxed extensions cannot write to arbitrary directories**. This caused multiple cascading failures.
+   - *What must happen:* Before writing code that interacts with system APIs (sandbox, permissions, entitlements, keychain, file system, Apple Events), the AI must research the **security model and constraints** of that API. "It should work" is not a valid basis for code.
+
+4. **Using wrong OS version defaults**
+   - *What happened:* The AI gave macOS 15 System Settings paths to a macOS 14 user.
+   - *What must happen:* When the user states their OS version, the AI must **research version-specific differences** before giving instructions. Never assume a path/setting is the same across versions.
+
+5. **Prioritizing speed over correctness**
+   - *What happened:* The AI chose to "produce output" quickly rather than pause to research, because fast responses felt like being helpful.
+   - *What must happen:* **Research is never wasted.** A 30-second research step that prevents a 10-minute debugging cycle is the single highest-value action the AI can take. Speed is secondary to accuracy. Always.
+
+### Pre-flight checklist before giving technical instructions
+
+Before presenting ANY instruction (code, config steps, UI navigation), the AI must verify:
+
+- [ ] **Do I know this from a verified source, or am I filling in gaps?** If filling in gaps → research first.
+- [ ] **Can I point to where this information comes from?** (doc URL, code inspection, verified tutorial) If not → it's a guess.
+- [ ] **Does this match the user's stated OS version?** If version-specific → verify for their version.
+- [ ] **Have I researched the security/sandbox/permission model for this API?** If it touches file access, keychain, Apple Events, or system extensions → research first.
+- [ ] **Am I presenting this as fact because I'm sure, or because I want to be helpful?** If the latter → stop, research.
+
+### Consequence of violating this rule
+
+Every guess costs the user:
+- Time to test the incorrect information
+- Time to report back what went wrong
+- Time to wait for the corrected version
+- Frustration and eroded trust
+
+**The total cost per guess is 3–5x the time a research step would have taken.**
+
 ---
 
 ## Key Findings

@@ -166,6 +166,116 @@ pluginkit -e use -i GMX.MoreMenu.MoreMenuExtension
 killall Finder
 ```
 
+## How to build a drag-and-drop app bundle
+
+If your goal is simply:
+
+- build `MoreMenu.app`
+- drag it into `Applications`
+- use it on your own Mac
+
+then this is the exact process.
+
+### In Xcode
+
+1. Open [MoreMenu.xcodeproj](/Users/robertwildling/Desktop/_WWW/_CreateTextFileRightCLickMenuItemOnMacOS/MoreMenu/MoreMenu.xcodeproj).
+2. In the top toolbar, choose the `MoreMenu` scheme.
+3. Choose `My Mac` as the destination.
+4. Open `Signing & Capabilities` for both targets:
+   - `MoreMenu`
+   - `MoreMenuExtension`
+5. Make sure:
+   - `Automatically manage signing` is enabled
+   - your Apple team is selected
+6. Choose `Product > Build`.
+
+### Find the built app
+
+After the build succeeds:
+
+1. In Xcode's left sidebar, open the file navigator.
+2. Find the `Products` section.
+3. Right-click `MoreMenu.app`.
+4. Choose `Show in Finder`.
+
+That opens the folder containing the built app bundle.
+
+### Install it
+
+Then:
+
+1. Drag `MoreMenu.app` into:
+   - `/Applications`
+   - or `~/Applications`
+2. Open the app once.
+3. Enable the Finder extension in:
+   - `System Settings > Privacy & Security > Extensions > Finder Extensions`
+4. In the app, click `Grant Folder Access…`.
+5. Choose your home folder or the folder tree you want to allow.
+
+### Important note
+
+For your own Mac, this local build-and-drag process is enough.
+
+This is the simplest practical way to get a normal `.app` you can keep in Applications.
+
+## How to make a shareable release for other Macs
+
+If you want to hand the app to other people or install it on another Mac without rebuilding it in Xcode, you should create a proper release build.
+
+That means:
+
+- sign it with Developer ID
+- notarize it with Apple
+
+Without that, another Mac may:
+
+- show stronger security warnings
+- refuse to trust the app cleanly
+- behave inconsistently when loading the embedded Finder extension
+
+### What another user may see with the current development-style build
+
+If the app is copied to another Mac in its current development-oriented form, the user can still drag it into `Applications`, but macOS may block the first launch through Gatekeeper.
+
+In that case, the user may need to:
+
+1. try to open the app once
+2. go to `System Settings > Privacy & Security`
+3. click `Open Anyway`
+4. confirm the launch
+
+That is a normal Gatekeeper override path for apps that are not distributed as fully notarized Developer ID releases.
+
+### What is needed
+
+You need:
+
+- an Apple Developer membership that supports Developer ID distribution
+- Xcode configured with that team
+- access to Apple's notarization service
+
+### Release process overview
+
+1. In Xcode, switch signing from local development signing to your Developer ID-capable setup.
+2. Build an archive or release build of `MoreMenu`.
+3. Export the signed app.
+4. Submit the app to Apple for notarization.
+5. Staple the notarization ticket to the app.
+6. Distribute the notarized `.app` or a `.dmg` containing it.
+
+### Practical outcome
+
+After that, another user can:
+
+1. download the app
+2. drag it into `Applications`
+3. open it
+4. enable the Finder extension
+5. grant folder access
+
+That is the proper path if the app is meant to leave the development machine.
+
 ## Troubleshooting
 
 ### The menu item does not appear

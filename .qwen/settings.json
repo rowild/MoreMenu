@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "mcp__FireCrawl__firecrawl_scrape",
+      "Bash(grep *)",
+      "Bash(mkdir *)",
+      "Bash(rm *)",
+      "Bash(xcodebuild *)"
+    ]
+  },
+  "$version": 3
+}

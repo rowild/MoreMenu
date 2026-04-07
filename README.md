@@ -20,8 +20,9 @@ This app adds that missing command for:
 ## Requirements
 
 - macOS 14 Sonoma or macOS 15 Sequoia
-- Xcode
-- an Apple ID configured in Xcode for signing
+- Xcode and an Apple ID configured in Xcode for building
+
+For everyday use of an already built app, Xcode is not required.
 
 ## Project structure
 
@@ -48,6 +49,39 @@ This app adds that missing command for:
 4. Open `Finder Extensions`.
 5. Enable `MoreMenu`.
 
+## Can it run on another Mac?
+
+Not only on this Mac, but the answer depends on how the app is built and signed.
+
+### Current state of this project
+
+The app in this project was built as a local development build.
+
+That means:
+
+- it is suitable for development and local use
+- it is not set up yet as a polished distributable release
+- copying that exact development build to another Mac may not be the most reliable distribution method
+
+### Reliable ways to use it on another Mac
+
+There are two realistic options:
+
+1. Open the project in Xcode on the other Mac and build it there with a valid Apple ID team.
+2. Create a proper release build signed with Developer ID and notarized by Apple, then distribute that app.
+
+### Practical interpretation
+
+So the app is not fundamentally tied to this one computer.
+
+But the current README and setup are written from a development perspective:
+
+- build locally in Xcode
+- install locally into Applications
+- enable the Finder extension locally
+
+If you want smooth installation on other Macs without rebuilding in Xcode, the next step would be proper outside-the-App-Store distribution with Developer ID signing and notarization.
+
 ## First-time setup
 
 When the host app opens:
@@ -64,6 +98,41 @@ That gives the app access to:
 - Desktop
 - Documents
 - and other folders inside your home directory
+
+## How to extend the allowed folders later
+
+You can extend the app's access at any time.
+
+### If you want to add another folder
+
+1. Open `MoreMenu` from Applications.
+2. Click `Grant Folder Access…`.
+3. Select the new folder you want to allow.
+4. Return to Finder and use `New Textfile` in that folder or one of its subfolders.
+
+### Important rule
+
+You do not need to add every single folder separately if you already granted a parent folder.
+
+Examples:
+
+- if you granted `/Users/your-name`, Desktop is already covered
+- if you granted `/Volumes/Work`, folders inside that volume are already covered
+- if you only granted `Desktop`, Documents is not covered
+
+### If a newly granted folder does not work immediately
+
+Usually Finder picks it up quickly, but if needed:
+
+- wait a moment
+- reopen Finder windows
+- or run `killall Finder` in Terminal
+
+### If you want to remove access
+
+The host app shows an `Authorized folders` list.
+
+Use the `Remove` button next to a folder to revoke that stored bookmark.
 
 ## How to use it
 
@@ -86,6 +155,8 @@ The installed app used during development was:
 - `/Users/robertwildling/Applications/MoreMenu.app`
 
 The embedded Finder extension is inside that app bundle.
+
+That installation path is not a technical requirement of the feature itself, but it is the cleanest place for normal use.
 
 If needed, the extension can be re-registered with:
 

@@ -1,314 +1,205 @@
 # MoreMenu
 
-`MoreMenu` is a small macOS app that adds a `New Textfile` item to Finder's right-click menu for empty space.
+`MoreMenu` is a small macOS app that adds a `New Textfile` item to Finder's right-click context menu.
 
 When you use it, the app:
 
 - creates `untitled.txt` in the current Finder location
-- automatically chooses `untitled_0001.txt`, `untitled_0002.txt`, and so on if needed
-- opens the created text file immediately with the default app for `.txt` files
+- automatically chooses `untitled_0001.txt`, `untitled_0002.txt`, and so on if a file with that name already exists
+- opens the created file immediately with the default app for `.txt` files
 
 ## What problem it solves
 
-macOS does not include a built-in "New Text File" item in Finder's empty-space context menu.
+macOS does not include a built-in "New Text File" item in Finder's context menu.
 
-This app adds that missing command for:
+This app adds that missing command when you right-click:
 
-- Finder windows
-- the Desktop
+- empty space inside any Finder window
+- empty space on the Desktop
+- a file or folder (the new file is created in the same directory)
 
 ## Requirements
 
 - macOS 14 Sonoma or macOS 15 Sequoia
 - Xcode and an Apple ID configured in Xcode for building
 
-For everyday use of an already built app, Xcode is not required.
+For everyday use of an already-built app, Xcode is not required.
 
 ## Project structure
 
-- [MoreMenu](/Users/robertwildling/Desktop/_WWW/_CreateTextFileRightCLickMenuItemOnMacOS/MoreMenu) contains the Xcode project
-- [ContentView.swift](/Users/robertwildling/Desktop/_WWW/_CreateTextFileRightCLickMenuItemOnMacOS/MoreMenu/MoreMenu/ContentView.swift) is the host app setup UI
-- [FinderSync.swift](/Users/robertwildling/Desktop/_WWW/_CreateTextFileRightCLickMenuItemOnMacOS/MoreMenu/MoreMenuExtension/FinderSync.swift) is the Finder extension logic
-- [How this App was created.md](/Users/robertwildling/Desktop/_WWW/_CreateTextFileRightCLickMenuItemOnMacOS/How%20this%20App%20was%20created.md) explains the full implementation and debugging process
+```
+MoreMenu/
+├── MoreMenu/               Host app (setup UI and extension container)
+│   ├── ContentView.swift   Setup guide shown on first launch
+│   └── MoreMenu.entitlements
+├── MoreMenuExtension/      Finder Sync Extension
+│   ├── FinderSync.swift    All extension logic — menu, target resolution, file creation
+│   └── MoreMenuExtension.entitlements
+└── MoreMenu.xcodeproj
+plans/
+├── 0001_bugs-and-fixes.md  Full bug audit and fix log
+└── 0002_the-solution.md    Complete post-mortem: every approach tried and why each worked or failed
+```
 
-## How to build and run
+## How to build and install
 
 ### In Xcode
 
-1. Open [MoreMenu.xcodeproj](/Users/robertwildling/Desktop/_WWW/_CreateTextFileRightCLickMenuItemOnMacOS/MoreMenu/MoreMenu.xcodeproj).
-2. In the top toolbar, choose the `MoreMenu` scheme.
-3. Choose `My Mac` as the run destination.
-4. In `Signing & Capabilities`, make sure your Apple team is selected for both targets.
-5. Click Run.
+1. Open `MoreMenu/MoreMenu.xcodeproj`.
+2. In `Signing & Capabilities`, select your Apple team for both the `MoreMenu` and `MoreMenuExtension` targets.
+3. Choose `Product > Build` (or press `Cmd+B`).
 
-### Enable the Finder extension
+### Install and register
 
-1. Open `System Settings`.
-2. Go to `Privacy & Security`.
-3. Open `Extensions`.
-4. Open `Finder Extensions`.
-5. Enable `MoreMenu`.
-
-## Can it run on another Mac?
-
-Not only on this Mac, but the answer depends on how the app is built and signed.
-
-### Current state of this project
-
-The app in this project was built as a local development build.
-
-That means:
-
-- it is suitable for development and local use
-- it is not set up yet as a polished distributable release
-- copying that exact development build to another Mac may not be the most reliable distribution method
-
-### Reliable ways to use it on another Mac
-
-There are two realistic options:
-
-1. Open the project in Xcode on the other Mac and build it there with a valid Apple ID team.
-2. Create a proper release build signed with Developer ID and notarized by Apple, then distribute that app.
-
-### Practical interpretation
-
-So the app is not fundamentally tied to this one computer.
-
-But the current README and setup are written from a development perspective:
-
-- build locally in Xcode
-- install locally into Applications
-- enable the Finder extension locally
-
-If you want smooth installation on other Macs without rebuilding in Xcode, the next step would be proper outside-the-App-Store distribution with Developer ID signing and notarization.
-
-## First-time setup
-
-When the host app opens:
-
-1. Click `Grant Folder Access…`.
-2. Select the folder tree where the app should be allowed to create files.
-
-Recommended choice:
-
-- your home folder, such as `/Users/your-name`
-
-That gives the app access to:
-
-- Desktop
-- Documents
-- and other folders inside your home directory
-
-## How to extend the allowed folders later
-
-You can extend the app's access at any time.
-
-### If you want to add another folder
-
-1. Open `MoreMenu` from Applications.
-2. Click `Grant Folder Access…`.
-3. Select the new folder you want to allow.
-4. Return to Finder and use `New Textfile` in that folder or one of its subfolders.
-
-### Important rule
-
-You do not need to add every single folder separately if you already granted a parent folder.
-
-Examples:
-
-- if you granted `/Users/your-name`, Desktop is already covered
-- if you granted `/Volumes/Work`, folders inside that volume are already covered
-- if you only granted `Desktop`, Documents is not covered
-
-### If a newly granted folder does not work immediately
-
-Usually Finder picks it up quickly, but if needed:
-
-- wait a moment
-- reopen Finder windows
-- or run `killall Finder` in Terminal
-
-### If you want to remove access
-
-The host app shows an `Authorized folders` list.
-
-Use the `Remove` button next to a folder to revoke that stored bookmark.
-
-## How to use it
-
-1. Open Finder.
-2. Go to the Desktop or any authorized folder.
-3. Right-click empty space.
-4. Choose `New Textfile`.
-
-Result:
-
-- a new text file is created in that location
-- the file is opened immediately
-
-## Installing it as a standalone app
-
-For local use, the finished app should live in your Applications folder.
-
-The installed app used during development was:
-
-- `/Users/robertwildling/Applications/MoreMenu.app`
-
-The embedded Finder extension is inside that app bundle.
-
-That installation path is not a technical requirement of the feature itself, but it is the cleanest place for normal use.
-
-If needed, the extension can be re-registered with:
+After a successful build, run these commands in Terminal:
 
 ```bash
+# Remove any previous copy
+rm -rf ~/Applications/MoreMenu.app
+
+# Copy the fresh build
+cp -R ~/Library/Developer/Xcode/DerivedData/MoreMenu-*/Build/Products/Debug/MoreMenu.app \
+      ~/Applications/MoreMenu.app
+
+# Register and enable the extension
 pluginkit -a "$HOME/Applications/MoreMenu.app/Contents/PlugIns/MoreMenuExtension.appex"
 pluginkit -e use -i GMX.MoreMenu.MoreMenuExtension
+
+# Restart Finder
 killall Finder
 ```
 
-## How to build a drag-and-drop app bundle
+### Enable in System Settings
 
-If your goal is simply:
+1. Open `System Settings → Privacy & Security → Extensions → Finder Extensions`.
+2. Enable `MoreMenu`.
 
-- build `MoreMenu.app`
-- drag it into `Applications`
-- use it on your own Mac
+That is all that is required.  There is no folder-access setup step needed.
 
-then this is the exact process.
+## How to use it
 
-### In Xcode
+Right-click anywhere in Finder — empty space in a window, the Desktop, or directly on a file — and choose `New Textfile`.
 
-1. Open [MoreMenu.xcodeproj](/Users/robertwildling/Desktop/_WWW/_CreateTextFileRightCLickMenuItemOnMacOS/MoreMenu/MoreMenu.xcodeproj).
-2. In the top toolbar, choose the `MoreMenu` scheme.
-3. Choose `My Mac` as the destination.
-4. Open `Signing & Capabilities` for both targets:
-   - `MoreMenu`
-   - `MoreMenuExtension`
-5. Make sure:
-   - `Automatically manage signing` is enabled
-   - your Apple team is selected
-6. Choose `Product > Build`.
+A new `untitled.txt` is created in that location and opened immediately.
 
-### Find the built app
+## Can it run on another Mac?
 
-After the build succeeds:
+### Build on the other Mac
 
-1. In Xcode's left sidebar, open the file navigator.
-2. Find the `Products` section.
-3. Right-click `MoreMenu.app`.
-4. Choose `Show in Finder`.
+The simplest reliable method: open the project in Xcode on the other Mac with a valid Apple ID, build, and install using the commands above.
 
-That opens the folder containing the built app bundle.
+### Shareable release
 
-### Install it
+For distributing to people who should not need to build it themselves, create a proper release build:
 
-Then:
+- sign with Developer ID
+- notarize with Apple
 
-1. Drag `MoreMenu.app` into:
-   - `/Applications`
-   - or `~/Applications`
-2. Open the app once.
-3. Enable the Finder extension in:
-   - `System Settings > Privacy & Security > Extensions > Finder Extensions`
-4. In the app, click `Grant Folder Access…`.
-5. Choose your home folder or the folder tree you want to allow.
-
-### Important note
-
-For your own Mac, this local build-and-drag process is enough.
-
-This is the simplest practical way to get a normal `.app` you can keep in Applications.
-
-## How to make a shareable release for other Macs
-
-If you want to hand the app to other people or install it on another Mac without rebuilding it in Xcode, you should create a proper release build.
-
-That means:
-
-- sign it with Developer ID
-- notarize it with Apple
-
-Without that, another Mac may:
-
-- show stronger security warnings
-- refuse to trust the app cleanly
-- behave inconsistently when loading the embedded Finder extension
-
-### What another user may see with the current development-style build
-
-If the app is copied to another Mac in its current development-oriented form, the user can still drag it into `Applications`, but macOS may block the first launch through Gatekeeper.
-
-In that case, the user may need to:
-
-1. try to open the app once
-2. go to `System Settings > Privacy & Security`
-3. click `Open Anyway`
-4. confirm the launch
-
-That is a normal Gatekeeper override path for apps that are not distributed as fully notarized Developer ID releases.
-
-### What is needed
-
-You need:
-
-- an Apple Developer membership that supports Developer ID distribution
-- Xcode configured with that team
-- access to Apple's notarization service
-
-### Release process overview
-
-1. In Xcode, switch signing from local development signing to your Developer ID-capable setup.
-2. Build an archive or release build of `MoreMenu`.
-3. Export the signed app.
-4. Submit the app to Apple for notarization.
-5. Staple the notarization ticket to the app.
-6. Distribute the notarized `.app` or a `.dmg` containing it.
-
-### Practical outcome
-
-After that, another user can:
-
-1. download the app
-2. drag it into `Applications`
-3. open it
-4. enable the Finder extension
-5. grant folder access
-
-That is the proper path if the app is meant to leave the development machine.
+Without notarization, Gatekeeper on the other Mac will block the first launch.  The user can override this via `System Settings → Privacy & Security → Open Anyway`, but that is an extra friction step.
 
 ## Troubleshooting
 
 ### The menu item does not appear
 
-Check:
-
-- the `MoreMenu` Finder extension is enabled in System Settings
-- Finder has been restarted
-- the app was actually built and signed
+- Confirm the extension is enabled in `System Settings → Privacy & Security → Extensions → Finder Extensions`.
+- Restart Finder: `killall Finder` in Terminal.
+- Verify the extension is registered: `pluginkit -mAvvv -i GMX.MoreMenu.MoreMenuExtension`
+  The `Path` line should point to `~/Applications/MoreMenu.app/...`, not DerivedData.
+- If it points to DerivedData, re-run the install commands above.
 
 ### The menu item appears but no file is created
 
-Check:
-
-- folder access was granted in the host app
-- the chosen folder is the same folder or a parent of the folder you are testing
-
-Example:
-
-- to use it on Desktop, granting `/Users/your-name` is sufficient
-- granting some unrelated external volume is not sufficient
+- Check that you are working inside your home directory (`~/`).
+  The extension has write access to your entire home directory tree.
+  It does not have access to volumes or directories outside `~`.
 
 ### The file is not opened automatically
 
-The app uses the default handler for `.txt` files.
+The app uses the default system handler for `.txt` files.  Check the default app assigned to `.txt` on your system.
 
-If the file is created but not opened as expected, check the default app assigned to `.txt` files on your system.
+### Watching live logs
+
+```bash
+/usr/bin/log stream --style compact \
+    --predicate 'subsystem == "GMX.MoreMenu.MoreMenuExtension"'
+```
 
 ## Notes
 
-- This app uses a Finder Sync extension because Automator and Shortcuts do not support adding custom commands to Finder's empty-space context menu.
-- The permission model relies on bookmarks shared from the host app to the extension.
+- This app uses a Finder Sync Extension because Automator and Shortcuts do not support adding custom items to Finder's empty-space context menu.
+- File creation uses the `com.apple.security.temporary-exception.files.home-relative-path.read-write` entitlement, which grants the sandboxed extension direct write access to the user's home directory — no bookmarks or IPC with the host app are needed.
 
 ## License
 
 No license file is included yet.
+
+---
+
+## Developer notes
+
+### How file creation works
+
+The extension is sandboxed.  It writes files directly using:
+
+```swift
+try "".write(to: candidate, atomically: true, encoding: .utf8)
+```
+
+This is possible because of a single entitlement in `MoreMenuExtension.entitlements`:
+
+```xml
+<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+<array>
+    <string>/</string>
+</array>
+```
+
+This grants the extension read-write access to the user's entire home directory (`~/`).
+Despite the word "temporary" in the key name, this is a stable entitlement available
+since macOS 10.10 and still supported today.
+
+### Approaches that do not work
+
+Three other mechanisms were tried before finding the above solution.  All three fail:
+
+1. **Direct `FileManager` / `Data().write()`** without the entitlement — EPERM.
+2. **Security-scoped bookmarks passed from the host app via App Group** —
+   `startAccessingSecurityScopedResource()` always returns `false` in the extension
+   process because security-scoped bookmarks are bound to the creating app's bundle ID
+   and cannot activate their scope in a different sandboxed process.
+3. **AppleScript `make new file at` delegated to Finder** — fails with
+   `Finder got an error: Application isn't running` from a sandboxed extension, even
+   though read-only Apple Event queries to Finder (e.g. asking for the insertion
+   location) succeed from the same process.
+
+See [plans/0002_the-solution.md](plans/0002_the-solution.md) for the full post-mortem.
+
+### Why not just use FinderUtilities?
+
+[suolapeikko/FinderUtilities](https://github.com/suolapeikko/FinderUtilities) uses the
+same entitlement and confirmed it works.  MoreMenu differs in three meaningful ways:
+
+| Behaviour | FinderUtilities | MoreMenu |
+|---|---|---|
+| Right-click empty space on Desktop **with no Finder window open** | ✗ silently fails | ✓ falls back to querying Finder for the current location via AppleScript |
+| Right-click **on a file** | ✗ not supported | ✓ creates the file alongside the right-clicked item |
+| Sidebar right-clicks | ✗ menu appears (no `menuKind` guard) | ✓ excluded — no reliable target directory |
+
+FinderUtilities also adds "Open Terminal" and "Copy selected paths" menu items, which
+are outside the scope of MoreMenu.
+
+### Re-registering the extension after a rebuild
+
+macOS caches extension registrations.  After every rebuild:
+
+```bash
+rm -rf ~/Applications/MoreMenu.app
+cp -R ~/Library/Developer/Xcode/DerivedData/MoreMenu-*/Build/Products/Debug/MoreMenu.app \
+      ~/Applications/MoreMenu.app
+pluginkit -a "$HOME/Applications/MoreMenu.app/Contents/PlugIns/MoreMenuExtension.appex"
+pluginkit -e use -i GMX.MoreMenu.MoreMenuExtension
+killall Finder
+```
+
+Always register from `~/Applications`, not from DerivedData — otherwise a subsequent
+clean build will invalidate the registered path.

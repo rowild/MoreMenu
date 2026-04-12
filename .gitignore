@@ -3,3 +3,5 @@ xcuserdata/
 **/xcuserdata/
 DerivedData/
 build/
+.build/
+dist/

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild -project /Users/robertwildling/Desktop/_WWW/_MoreMenu/MoreMenu/MoreMenu.xcodeproj -scheme MoreMenu -configuration Debug -sdk macosx build)",
+      "Bash(cp -R /Users/robertwildling/Library/Developer/Xcode/DerivedData/MoreMenu-ewradluxqndloyhcvgzmedkwhnib/Build/Products/Debug/MoreMenu.app __TRACKED_VAR__/Applications/MoreMenu.app)",
+      "Bash(pluginkit -a __TRACKED_VAR__/Applications/MoreMenu.app/Contents/PlugIns/MoreMenuExtension.appex)",
+      "Bash(pluginkit -e use -i GMX.MoreMenu.MoreMenuExtension)",
+      "Bash(killall Finder)",
+      "WebFetch(domain:cmsj.net)",
+      "WebFetch(domain:github.com)",
+      "Read(//private/tmp/**)",
+      "Bash(gh api:*)"
+    ]
+  }
+}

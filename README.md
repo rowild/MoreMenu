@@ -20,7 +20,7 @@ This app adds that missing command when you right-click:
 
 ## Requirements
 
-- macOS 14 Sonoma or macOS 15 Sequoia
+- macOS 14 Sonoma, macOS 15 Sequoia, or macOS 26 Tahoe
 - Xcode and an Apple ID configured in Xcode for building
 
 For everyday use of an already-built app, Xcode is not required.

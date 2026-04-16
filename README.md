@@ -8,7 +8,7 @@ When you use it, the app:
 - creates `untitled.md` in the current Finder location
 - creates `untitled.rtf` as a valid rich-text document in the current Finder location
 - automatically chooses `untitled_0001.ext`, `untitled_0002.ext`, and so on if a file with that name already exists
-- automatically adapts the menu icons to light and dark mode using template system symbols
+- uses fixed white menu icons for consistent visibility in Finder menus
 - opens the created file immediately with the default app for that file type
 
 ## What problem it solves
@@ -118,6 +118,7 @@ It is for personal use on your own Mac.
 - Verify the extension is registered: `pluginkit -mAvvv -i GMX.MoreMenu.MoreMenuExtension`
   The `Path` line should point to `~/Applications/MoreMenu.app/...`, not DerivedData.
 - If it points to DerivedData, re-run `./scripts/install-local.sh`.
+- If macOS shows a dialog about **System Extensions**, that is not the relevant switch for MoreMenu. Finder Sync uses the `Finder Extensions` setting above, not the separate System Extensions security flow.
 
 ### The app does not open
 
@@ -133,6 +134,12 @@ It is for personal use on your own Mac.
 - Check that you are working inside your home directory (`~/`).
   The extension has write access to your entire home directory tree.
   It does not have access to volumes or directories outside `~`.
+- Check the live extension logs:
+  ```bash
+  /usr/bin/log stream --style compact \
+      --predicate 'subsystem == "GMX.MoreMenu.MoreMenuExtension"'
+  ```
+  If you click a menu item and do not see a `Creating ...` line, reinstall with `./scripts/install-local.sh`.
 
 ### The file is not opened automatically
 
@@ -149,6 +156,7 @@ app assigned to `.txt`, `.md`, or `.rtf` on your system.
 ## Notes
 
 - This app uses a Finder Sync Extension because Automator and Shortcuts do not support adding custom items to Finder's empty-space context menu.
+- Finder Sync is an **app extension**, not a macOS system extension. The Recovery-mode System Extensions security setting is not required for this app.
 - File creation uses the `com.apple.security.temporary-exception.files.home-relative-path.read-write` entitlement, which grants the sandboxed extension direct write access to the user's home directory — no bookmarks or IPC with the host app are needed.
 
 ## License

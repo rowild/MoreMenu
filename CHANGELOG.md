@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.3 - 2026-04-16
 
 ### Added
 
@@ -8,8 +8,10 @@
 
 ### Changed
 
-- Menu icons now use template system symbols so they adapt automatically to light and dark mode.
+- Menu icons are now rendered as fixed white symbols for consistent visibility in Finder menus.
 - Rich-text creation now writes a minimal valid RTF payload instead of creating a zero-byte `.rtf` file.
+- Finder menu actions now use dedicated selectors per file type instead of relying on `representedObject`, which fixed Tahoe builds where clicks reached the extension but no file was created.
+- Documentation now states explicitly that Finder Sync is an app extension, so the separate macOS System Extensions security flow is not relevant to MoreMenu.
 
 ## 1.1.2 - 2026-04-16
 

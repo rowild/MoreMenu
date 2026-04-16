@@ -118,11 +118,10 @@ class FinderSync: FIFinderSync {
         for kind in DocumentKind.allCases {
             let menuItem = NSMenuItem(
                 title: kind.menuTitle,
-                action: #selector(newDocumentAction(_:)),
+                action: selector(for: kind),
                 keyEquivalent: ""
             )
             menuItem.target = self
-            menuItem.representedObject = kind.rawValue
             menuItem.image = symbolImage(named: kind.symbolName)
             menu.addItem(menuItem)
         }
@@ -132,17 +131,21 @@ class FinderSync: FIFinderSync {
 
     // MARK: - Menu action
 
-    @objc func newDocumentAction(_ sender: NSMenuItem) {
+    @objc func newTextFileAction(_ sender: AnyObject) {
+        createDocument(.plainText)
+    }
+
+    @objc func newMarkdownFileAction(_ sender: AnyObject) {
+        createDocument(.markdown)
+    }
+
+    @objc func newRichTextFileAction(_ sender: AnyObject) {
+        createDocument(.richText)
+    }
+
+    private func createDocument(_ kind: DocumentKind) {
         guard let targetURL = targetDirectory(for: currentMenuKind) else {
             logger.error("No resolvable target directory for menu action")
-            return
-        }
-
-        guard
-            let rawValue = sender.representedObject as? String,
-            let kind = DocumentKind(rawValue: rawValue)
-        else {
-            logger.error("Menu action missing document kind")
             return
         }
 
@@ -230,8 +233,33 @@ class FinderSync: FIFinderSync {
     }
 
     private func symbolImage(named symbolName: String) -> NSImage? {
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-        image?.isTemplate = true
-        return image
+        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        guard
+            let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(configuration)
+        else {
+            return nil
+        }
+
+        let imageRect = NSRect(origin: .zero, size: baseImage.size)
+        let whiteImage = NSImage(size: baseImage.size)
+        whiteImage.lockFocus()
+        baseImage.draw(in: imageRect)
+        NSColor.white.set()
+        imageRect.fill(using: .sourceAtop)
+        whiteImage.unlockFocus()
+        whiteImage.isTemplate = false
+        return whiteImage
+    }
+
+    private func selector(for kind: DocumentKind) -> Selector {
+        switch kind {
+        case .plainText:
+            return #selector(newTextFileAction(_:))
+        case .markdown:
+            return #selector(newMarkdownFileAction(_:))
+        case .richText:
+            return #selector(newRichTextFileAction(_:))
+        }
     }
 }

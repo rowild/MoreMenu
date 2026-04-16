@@ -1,7 +1,13 @@
-# AGENTS.md — macOS Finder "New Textfile" Context Menu
+# AGENTS.md — macOS Finder "New File" Context Menu
 
 ## Project Goal
-Add a **"New Textfile"** item to the Finder right-click (context) menu that creates `untitled.txt` in the current location. Target: macOS 14 (Sonoma) and 15 (Sequoia).
+Add Finder right-click (context) menu items that create:
+
+- `untitled.txt`
+- `untitled.md`
+- `untitled.rtf`
+
+Target: macOS 14 (Sonoma), 15 (Sequoia), and 26 (Tahoe).
 
 ---
 
@@ -113,6 +119,11 @@ Every guess costs the user:
 - **Menuist** — Finder enhancement tool with context menu extensions
 - These use Finder Sync Extensions under the hood
 
+### 4. Finder Sync is NOT a System Extension
+- Finder Sync uses the `com.apple.FinderSync` **app extension** point.
+- If the user sees a macOS dialog about enabling **System Extensions** in Recovery, that is a different security flow and is **not** the switch that controls MoreMenu.
+- The relevant UI remains: **System Settings → Privacy & Security → Extensions → Finder Extensions**
+
 ---
 
 ## Solutions Evaluated
@@ -214,12 +225,17 @@ Every guess costs the user:
 - **Verdict:** Rejected — does not meet the requirement.
 
 ### Solution C: Finder Sync Extension (Swift/Xcode) — RECOMMENDED
-- **Status:** The only solution that works on empty space.
+- **Status:** Implemented and working.
 - **Architecture:**
   - Container app (host) + Finder Sync Extension target
   - Extension registers a directory (or all directories) via `FIFinderSyncController`
-  - Implements `menu(for:)` to return a custom `NSMenu` with "New Textfile" action
-  - The action creates `untitled.txt` via `FileManager` or shell `touch`
+  - Implements `menu(for:)` to return a custom `NSMenu` with three actions:
+    - `New Textfile`
+    - `New Markdown File`
+    - `New Rich Text File`
+  - The actions create `untitled.txt`, `untitled.md`, or `untitled.rtf`
+  - `.rtf` uses a minimal valid RTF payload so rich-text apps open it correctly
+  - Menu icons are forced to white for consistent visibility in Finder menus
 - **Requirements:**
   - Xcode installed
   - Apple Developer account (free tier works) for code signing
@@ -228,18 +244,23 @@ Every guess costs the user:
 
 ---
 
-## Next Steps: Build Finder Sync Extension
+## Current Implementation
 
-1. Create Xcode project structure with two targets:
-   - Host app (minimal)
+1. The project contains two targets:
+   - Host app (minimal setup UI)
    - Finder Sync Extension
-2. Implement `FinderSync.swift`:
-   - Register monitored directories
-   - Add "New Textfile" menu item to context menu
-   - Handle the menu action to create `untitled.txt`
-   - Handle duplicate names (e.g., `untitled 1.txt`, `untitled 2.txt`)
-3. User opens project in Xcode, sets signing, builds, and runs
-4. Enable extension in System Settings → Privacy & Security → Extensions → Finder Extensions
+2. `FinderSync.swift` currently:
+   - Registers `/` so Finder calls the extension for local folders and the Desktop
+   - Adds menu items for plain text, Markdown, and rich text
+   - Creates `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
+   - Falls back to Finder's insertion location for empty-space clicks
+3. Local installation flow:
+   - `./scripts/install-local.sh`
+   - installs to `~/Applications`
+   - registers the embedded Finder extension
+   - restarts Finder
+4. Enablement UI:
+   - **System Settings → Privacy & Security → Extensions → Finder Extensions**
 
 ### Key Swift API Reference
 - `FIFinderSyncController.default()` — singleton controller

@@ -8,7 +8,7 @@
 //  A Finder Sync Extension is sandboxed.  The `com.apple.security.temporary-exception.files.home-relative-path.read-write`
 //  entitlement (set to ["/"]) grants the extension read-write access to the user's entire home
 //  directory tree without requiring any Apple Events, security-scoped bookmarks, or IPC with
-//  the host app.  File creation is therefore a direct String.write(to:) call — no Finder
+//  the host app.  File creation is therefore a direct Data.write(to:) call — no Finder
 //  scripting, no bookmark resolution, no startAccessingSecurityScopedResource() needed.
 //
 //  Reference implementation that confirmed this approach:
@@ -21,9 +21,60 @@ import OSLog
 
 class FinderSync: FIFinderSync {
 
-    // MARK: - Constants
+    // MARK: - Document types
 
-    private static let menuItemTitle = "New Textfile"
+    private enum DocumentKind: String, CaseIterable {
+        case plainText
+        case markdown
+        case richText
+
+        var menuTitle: String {
+            switch self {
+            case .plainText:
+                return "New Textfile"
+            case .markdown:
+                return "New Markdown File"
+            case .richText:
+                return "New Rich Text File"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .plainText:
+                return "doc.plaintext"
+            case .markdown:
+                return "doc.text"
+            case .richText:
+                return "doc.richtext"
+            }
+        }
+
+        var baseName: String { "untitled" }
+
+        var fileExtension: String {
+            switch self {
+            case .plainText:
+                return "txt"
+            case .markdown:
+                return "md"
+            case .richText:
+                return "rtf"
+            }
+        }
+
+        var initialContents: Data {
+            switch self {
+            case .plainText, .markdown:
+                return Data()
+            case .richText:
+                // Minimal valid RTF so TextEdit and other rich-text apps open it
+                // as a rich-text document instead of a zero-byte plain file.
+                let rtf = #"{\rtf1\ansi\deff0 {\fonttbl {\f0 Helvetica;}}\f0\fs24 }"#
+                return Data(rtf.utf8)
+            }
+        }
+    }
 
     // MARK: - Properties
 
@@ -64,33 +115,41 @@ class FinderSync: FIFinderSync {
 
         currentMenuKind = menuKind
 
-        let newItem = NSMenuItem(
-            title: Self.menuItemTitle,
-            action: #selector(newTextFileAction(_:)),
-            keyEquivalent: ""
-        )
-        if let icon = NSImage(named: "MenuFileIcon") {
-            icon.isTemplate = false
-            newItem.image = icon
+        for kind in DocumentKind.allCases {
+            let menuItem = NSMenuItem(
+                title: kind.menuTitle,
+                action: #selector(newDocumentAction(_:)),
+                keyEquivalent: ""
+            )
+            menuItem.target = self
+            menuItem.representedObject = kind.rawValue
+            menuItem.image = symbolImage(named: kind.symbolName)
+            menu.addItem(menuItem)
         }
-        newItem.target = self
-        menu.addItem(newItem)
 
         return menu
     }
 
     // MARK: - Menu action
 
-    @objc func newTextFileAction(_ sender: AnyObject) {
+    @objc func newDocumentAction(_ sender: NSMenuItem) {
         guard let targetURL = targetDirectory(for: currentMenuKind) else {
             logger.error("No resolvable target directory for menu action")
             return
         }
 
-        logger.log("Creating text file in: \(targetURL.path, privacy: .public)")
+        guard
+            let rawValue = sender.representedObject as? String,
+            let kind = DocumentKind(rawValue: rawValue)
+        else {
+            logger.error("Menu action missing document kind")
+            return
+        }
+
+        logger.log("Creating \(kind.fileExtension, privacy: .public) file in: \(targetURL.path, privacy: .public)")
 
         do {
-            let createdURL = try createFile(in: targetURL)
+            let createdURL = try createFile(in: targetURL, as: kind)
             logger.log("Successfully created: \(createdURL.path, privacy: .public)")
             presentCreatedFile(createdURL)
         } catch {
@@ -140,27 +199,24 @@ class FinderSync: FIFinderSync {
 
     // MARK: - File creation
 
-    /// Creates a new empty text file in `directoryURL` by writing an empty string directly.
+    /// Creates a new document in `directoryURL` with content suited to its file type.
     ///
     /// The `com.apple.security.temporary-exception.files.home-relative-path.read-write`
     /// entitlement (set to ["/"]) grants the extension write access to the user's home
     /// directory tree, so no Apple Events or security-scoped bookmarks are needed.
     ///
-    /// Naming sequence: untitled.txt → untitled_0001.txt → untitled_0002.txt …
-    private func createFile(in directoryURL: URL) throws -> URL {
-        let baseName = "untitled"
-        let fileExt  = ".txt"
-
-        var candidate = directoryURL.appendingPathComponent(baseName + fileExt)
+    /// Naming sequence: untitled.ext → untitled_0001.ext → untitled_0002.ext …
+    private func createFile(in directoryURL: URL, as kind: DocumentKind) throws -> URL {
+        var candidate = directoryURL.appendingPathComponent("\(kind.baseName).\(kind.fileExtension)")
         var counter = 0
 
         while FileManager.default.fileExists(atPath: candidate.path) {
             counter += 1
             let padded = String(format: "%04d", counter)
-            candidate = directoryURL.appendingPathComponent("\(baseName)_\(padded)\(fileExt)")
+            candidate = directoryURL.appendingPathComponent("\(kind.baseName)_\(padded).\(kind.fileExtension)")
         }
 
-        try "".write(to: candidate, atomically: true, encoding: .utf8)
+        try kind.initialContents.write(to: candidate, options: .atomic)
         return candidate
     }
 
@@ -172,10 +228,10 @@ class FinderSync: FIFinderSync {
             NSWorkspace.shared.activateFileViewerSelecting([fileURL])
         }
     }
-}
 
-// MARK: - Error types
-
-private enum FileCreationError: Error {
-    case writeFailed(String)
+    private func symbolImage(named symbolName: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+        image?.isTemplate = true
+        return image
+    }
 }

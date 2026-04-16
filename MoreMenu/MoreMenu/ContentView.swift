@@ -25,6 +25,12 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 520)
 
+            Text("Finder adds commands for plain text, Markdown, and rich text files. The menu icons automatically adapt to light and dark mode.")
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 520)
+
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
@@ -34,7 +40,7 @@ struct ContentView: View {
                 StepView(number: 1, text: "Build and install MoreMenu.app.")
                 StepView(number: 2, text: "Register and enable MoreMenuExtension.")
                 StepView(number: 3, text: "Restart Finder.")
-                StepView(number: 4, text: "Right-click in Finder and choose \"New Textfile\".")
+                StepView(number: 4, text: "Right-click in Finder and choose a new file type.")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()

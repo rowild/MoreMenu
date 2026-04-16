@@ -1,12 +1,15 @@
 # MoreMenu
 
-`MoreMenu` is a small macOS app that adds a `New Textfile` item to Finder's right-click context menu.
+`MoreMenu` is a small macOS app that adds file-creation commands to Finder's right-click context menu.
 
 When you use it, the app:
 
 - creates `untitled.txt` in the current Finder location
-- automatically chooses `untitled_0001.txt`, `untitled_0002.txt`, and so on if a file with that name already exists
-- opens the created file immediately with the default app for `.txt` files
+- creates `untitled.md` in the current Finder location
+- creates `untitled.rtf` as a valid rich-text document in the current Finder location
+- automatically chooses `untitled_0001.ext`, `untitled_0002.ext`, and so on if a file with that name already exists
+- automatically adapts the menu icons to light and dark mode using template system symbols
+- opens the created file immediately with the default app for that file type
 
 ## What problem it solves
 
@@ -17,6 +20,12 @@ This app adds that missing command when you right-click:
 - empty space inside any Finder window
 - empty space on the Desktop
 - a file or folder (the new file is created in the same directory)
+
+The Finder menu includes:
+
+- `New Textfile`
+- `New Markdown File`
+- `New Rich Text File`
 
 ## Requirements
 
@@ -74,9 +83,9 @@ That is all that is required.  There is no folder-access setup step needed.
 
 ## How to use it
 
-Right-click anywhere in Finder — empty space in a window, the Desktop, or directly on a file — and choose `New Textfile`.
+Right-click anywhere in Finder — empty space in a window, the Desktop, or directly on a file — and choose the file type you want.
 
-A new `untitled.txt` is created in that location and opened immediately.
+A new `untitled.txt`, `untitled.md`, or `untitled.rtf` is created in that location and opened immediately.
 
 ## Can it run on another Mac?
 
@@ -127,7 +136,8 @@ It is for personal use on your own Mac.
 
 ### The file is not opened automatically
 
-The app uses the default system handler for `.txt` files.  Check the default app assigned to `.txt` on your system.
+The app uses the default system handler for the selected file type. Check the default
+app assigned to `.txt`, `.md`, or `.rtf` on your system.
 
 ### Watching live logs
 
@@ -151,10 +161,10 @@ No license file is included yet.
 
 ### How file creation works
 
-The extension is sandboxed.  It writes files directly using:
+The extension is sandboxed. It writes files directly using:
 
 ```swift
-try "".write(to: candidate, atomically: true, encoding: .utf8)
+try kind.initialContents.write(to: candidate, options: .atomic)
 ```
 
 This is possible because of a single entitlement in `MoreMenuExtension.entitlements`:

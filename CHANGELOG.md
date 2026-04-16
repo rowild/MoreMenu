@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Finder menu items for `untitled.md` and `untitled.rtf`, alongside the existing plain-text item.
+
+### Changed
+
+- Menu icons now use template system symbols so they adapt automatically to light and dark mode.
+- Rich-text creation now writes a minimal valid RTF payload instead of creating a zero-byte `.rtf` file.
+
 ## 1.1.2 - 2026-04-16
 
 ### Added

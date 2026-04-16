@@ -5,7 +5,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>MoreMenu needs Finder automation so it can create untitled.txt in the folder whose empty space you clicked.</string>
+	<string>MoreMenu needs Finder automation so it can determine the current Finder location when you create a new file from empty space.</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

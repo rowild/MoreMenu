@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.4 - 2026-04-16
+
+### Added
+
+- Settings-driven file-type picker in the host app, including optional web and framework-oriented file types such as `JSX`, `TSX`, and `Vue`.
+- Shared App Group preferences so the host app can control which MoreMenu commands the Finder extension shows.
+- `DEVELOPER.md` for build, release, architecture, and troubleshooting notes.
+- End-user screenshots in `README.md` for the Finder menu and the settings window.
+
+### Changed
+
+- README rewritten as an end-user guide with screenshots and usage-focused wording.
+- Historical plan references now point to `.claude/plans/`.
+
 ## 1.1.3 - 2026-04-16
 
 ### Added

@@ -19,6 +19,10 @@ import Cocoa
 import FinderSync
 import OSLog
 
+private let sharedDefaultsSuiteName = "group.GMX.MoreMenu"
+private let finderMenuEnabledKey = "finderMenuEnabled"
+private let enabledDocumentKeysKey = "enabledDocumentKeys"
+
 class FinderSync: FIFinderSync {
 
     // MARK: - Document types
@@ -27,6 +31,22 @@ class FinderSync: FIFinderSync {
         case plainText
         case markdown
         case richText
+        case json
+        case yaml
+        case toml
+        case xml
+        case csv
+        case log
+        case html
+        case css
+        case scss
+        case javascript
+        case jsx
+        case typescript
+        case tsx
+        case vue
+        case shellScript
+        case python
 
         var menuTitle: String {
             switch self {
@@ -36,6 +56,38 @@ class FinderSync: FIFinderSync {
                 return "New Markdown File"
             case .richText:
                 return "New Rich Text File"
+            case .json:
+                return "New JSON File"
+            case .yaml:
+                return "New YAML File"
+            case .toml:
+                return "New TOML File"
+            case .xml:
+                return "New XML File"
+            case .csv:
+                return "New CSV File"
+            case .log:
+                return "New Log File"
+            case .html:
+                return "New HTML File"
+            case .css:
+                return "New CSS File"
+            case .scss:
+                return "New SCSS File"
+            case .javascript:
+                return "New JavaScript File"
+            case .jsx:
+                return "New JSX File"
+            case .typescript:
+                return "New TypeScript File"
+            case .tsx:
+                return "New TSX File"
+            case .vue:
+                return "New Vue Component"
+            case .shellScript:
+                return "New Shell Script"
+            case .python:
+                return "New Python File"
             }
         }
 
@@ -47,6 +99,17 @@ class FinderSync: FIFinderSync {
                 return "doc.text"
             case .richText:
                 return "doc.richtext"
+            default:
+                return "doc.text"
+            }
+        }
+
+        var defaultEnabled: Bool {
+            switch self {
+            case .plainText, .markdown, .richText:
+                return true
+            default:
+                return false
             }
         }
 
@@ -60,12 +123,61 @@ class FinderSync: FIFinderSync {
                 return "md"
             case .richText:
                 return "rtf"
+            case .json:
+                return "json"
+            case .yaml:
+                return "yml"
+            case .toml:
+                return "toml"
+            case .xml:
+                return "xml"
+            case .csv:
+                return "csv"
+            case .log:
+                return "log"
+            case .html:
+                return "html"
+            case .css:
+                return "css"
+            case .scss:
+                return "scss"
+            case .javascript:
+                return "js"
+            case .jsx:
+                return "jsx"
+            case .typescript:
+                return "ts"
+            case .tsx:
+                return "tsx"
+            case .vue:
+                return "vue"
+            case .shellScript:
+                return "sh"
+            case .python:
+                return "py"
             }
         }
 
         var initialContents: Data {
             switch self {
-            case .plainText, .markdown:
+            case .plainText,
+                    .markdown,
+                    .json,
+                    .yaml,
+                    .toml,
+                    .xml,
+                    .csv,
+                    .log,
+                    .html,
+                    .css,
+                    .scss,
+                    .javascript,
+                    .jsx,
+                    .typescript,
+                    .tsx,
+                    .vue,
+                    .shellScript,
+                    .python:
                 return Data()
             case .richText:
                 // Minimal valid RTF so TextEdit and other rich-text apps open it
@@ -73,6 +185,21 @@ class FinderSync: FIFinderSync {
                 let rtf = #"{\rtf1\ansi\deff0 {\fonttbl {\f0 Helvetica;}}\f0\fs24 }"#
                 return Data(rtf.utf8)
             }
+        }
+
+        static func enabledKinds(using defaults: UserDefaults) -> [DocumentKind] {
+            let isMenuEnabled = defaults.object(forKey: finderMenuEnabledKey) == nil
+                ? true
+                : defaults.bool(forKey: finderMenuEnabledKey)
+
+            guard isMenuEnabled else { return [] }
+
+            if let storedKeys = defaults.stringArray(forKey: enabledDocumentKeysKey) {
+                let enabledKeys = Set(storedKeys)
+                return allCases.filter { enabledKeys.contains($0.rawValue) }
+            }
+
+            return allCases.filter(\.defaultEnabled)
         }
     }
 
@@ -108,17 +235,18 @@ class FinderSync: FIFinderSync {
         }
 
         let menu = NSMenu(title: "")
+        let enabledKinds = activeDocumentKinds()
 
-        guard targetDirectory(for: menuKind) != nil else {
+        guard targetDirectory(for: menuKind) != nil, !enabledKinds.isEmpty else {
             return menu
         }
 
         currentMenuKind = menuKind
 
-        for kind in DocumentKind.allCases {
+        for kind in enabledKinds {
             let menuItem = NSMenuItem(
                 title: kind.menuTitle,
-                action: selector(for: kind),
+                action: #selector(newDocumentAction(_:)),
                 keyEquivalent: ""
             )
             menuItem.target = self
@@ -131,16 +259,12 @@ class FinderSync: FIFinderSync {
 
     // MARK: - Menu action
 
-    @objc func newTextFileAction(_ sender: AnyObject) {
-        createDocument(.plainText)
-    }
-
-    @objc func newMarkdownFileAction(_ sender: AnyObject) {
-        createDocument(.markdown)
-    }
-
-    @objc func newRichTextFileAction(_ sender: AnyObject) {
-        createDocument(.richText)
+    @objc func newDocumentAction(_ sender: NSMenuItem) {
+        guard let kind = kind(forMenuTitle: sender.title) else {
+            logger.error("Could not resolve document kind for menu title: \(sender.title, privacy: .public)")
+            return
+        }
+        createDocument(kind)
     }
 
     private func createDocument(_ kind: DocumentKind) {
@@ -232,6 +356,16 @@ class FinderSync: FIFinderSync {
         }
     }
 
+    private func activeDocumentKinds() -> [DocumentKind] {
+        let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) ?? .standard
+        return DocumentKind.enabledKinds(using: defaults)
+    }
+
+    private func kind(forMenuTitle title: String) -> DocumentKind? {
+        activeDocumentKinds().first { $0.menuTitle == title }
+            ?? DocumentKind.allCases.first { $0.menuTitle == title }
+    }
+
     private func symbolImage(named symbolName: String) -> NSImage? {
         let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
         guard
@@ -250,16 +384,5 @@ class FinderSync: FIFinderSync {
         whiteImage.unlockFocus()
         whiteImage.isTemplate = false
         return whiteImage
-    }
-
-    private func selector(for kind: DocumentKind) -> Selector {
-        switch kind {
-        case .plainText:
-            return #selector(newTextFileAction(_:))
-        case .markdown:
-            return #selector(newMarkdownFileAction(_:))
-        case .richText:
-            return #selector(newRichTextFileAction(_:))
-        }
     }
 }

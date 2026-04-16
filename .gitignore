@@ -5,4 +5,4 @@ DerivedData/
 build/
 .build/
 dist/
-.claude/_MoreMenu.code-workspace
+.claude/

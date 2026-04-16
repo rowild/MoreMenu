@@ -1,235 +1,90 @@
 # MoreMenu
 
-`MoreMenu` is a small macOS app that adds file-creation commands to Finder's right-click context menu.
+MoreMenu adds new-file commands directly to Finder's first-level right-click menu on macOS.
 
-When you use it, the app:
+Instead of digging through `Services` or another submenu, you can create a file exactly where you are working and open it immediately in the assigned app. That keeps the workflow short: right-click, choose the file type, start typing.
 
-- creates `untitled.txt` in the current Finder location
-- creates `untitled.md` in the current Finder location
-- creates `untitled.rtf` as a valid rich-text document in the current Finder location
-- automatically chooses `untitled_0001.ext`, `untitled_0002.ext`, and so on if a file with that name already exists
-- uses fixed white menu icons for consistent visibility in Finder menus
-- opens the created file immediately with the default app for that file type
+## What It Does
 
-## What problem it solves
+- adds new-file commands to Finder's top-level context menu
+- works on empty space in a Finder window, on the Desktop, and on a selected file or folder
+- creates the new file in the current location
+- opens the created file right away in the default app for that file type
+- auto-increments names: `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
 
-macOS does not include a built-in "New Text File" item in Finder's context menu.
+## Screenshots
 
-This app adds that missing command when you right-click:
+### Finder Context Menu
 
-- empty space inside any Finder window
-- empty space on the Desktop
-- a file or folder (the new file is created in the same directory)
+The file types you enable appear directly in Finder's first-level context menu.
 
-The Finder menu includes:
+![Finder context menu showing MoreMenu commands](assets/moremenu-screenshot-02.png)
 
-- `New Textfile`
-- `New Markdown File`
-- `New Rich Text File`
+### File-Type Settings
 
-## Requirements
+The MoreMenu app lets you decide which file types should appear.
 
-- macOS 14 Sonoma, macOS 15 Sequoia, or macOS 26 Tahoe
-- Xcode and an Apple ID configured in Xcode for building
+![MoreMenu settings window with file-type checkboxes](assets/moremenu-screenshot-01.png)
 
-For everyday use of an already-built app, Xcode is not required.
+## File Types
 
-## Project structure
+MoreMenu includes three core types out of the box:
 
-```
-MoreMenu/
-├── MoreMenu/               Host app (setup UI and extension container)
-│   ├── ContentView.swift   Setup guide shown on first launch
-│   └── MoreMenu.entitlements
-├── MoreMenuExtension/      Finder Sync Extension
-│   ├── FinderSync.swift    All extension logic — menu, target resolution, file creation
-│   └── MoreMenuExtension.entitlements
-└── MoreMenu.xcodeproj
-plans/
-├── 0001_bugs-and-fixes.md  Full bug audit and fix log
-└── 0002_the-solution.md    Complete post-mortem: every approach tried and why each worked or failed
-```
+- `Text (.txt)`
+- `Markdown (.md)`
+- `Rich Text (.rtf)`
 
-## How to build and install
+You can also enable common developer-oriented file types, including:
 
-### Local install
+- `JSON`, `YAML`, `TOML`, `XML`, `CSV`, `LOG`
+- `HTML`, `CSS`, `SCSS`
+- `JavaScript`, `JSX`
+- `TypeScript`, `TSX`
+- `Vue (.vue)`
+- `Shell Script (.sh)`
+- `Python (.py)`
 
-For personal use on this Mac, use the local installer:
+## How To Manage File Extensions
 
-```bash
-./scripts/install-local.sh
-```
+1. Open `MoreMenu.app`
+2. Turn `Enable MoreMenu in Finder` on or off
+3. Check the file types you want to see in Finder
+4. Right-click in Finder
 
-This builds a Release app, signs it ad hoc, copies it to `~/Applications`, registers
-the embedded Finder extension, and restarts Finder.
+Changes apply the next time you open the context menu.
 
-Do not install the Debug app from Xcode's DerivedData folder for regular use. Debug
-builds signed with a free Apple Development profile can stop launching when the
-embedded provisioning profile expires.
+Built-in file types stay enabled by default. The larger web and framework-oriented list is opt-in, so the menu does not get crowded unless you want it to.
 
-### Xcode build
+## How To Use It
 
-1. Open `MoreMenu/MoreMenu.xcodeproj`.
-2. In `Signing & Capabilities`, select your Apple team for both the `MoreMenu` and `MoreMenuExtension` targets.
-3. Choose `Product > Build` (or press `Cmd+B`).
-4. Run `./scripts/install-local.sh` from Terminal to install the durable local build.
+Right-click in Finder and choose the file type you want:
 
-### Enable in System Settings
+- inside a Finder window
+- on the Desktop
+- on a file or folder
 
-1. Open `System Settings → Privacy & Security → Extensions → Finder Extensions`.
-2. Enable `MoreMenu`.
+MoreMenu creates the file in that location and immediately opens it in the app currently assigned to that extension.
 
-That is all that is required.  There is no folder-access setup step needed.
+## Why It Is Useful
 
-## How to use it
+macOS normally pushes similar actions into less direct places such as `Services`, or only exposes them when a folder is selected.
 
-Right-click anywhere in Finder — empty space in a window, the Desktop, or directly on a file — and choose the file type you want.
+MoreMenu keeps those commands at the first menu level and opens the result immediately, which makes repetitive file creation much faster and less interruptive when you are already working in Finder.
 
-A new `untitled.txt`, `untitled.md`, or `untitled.rtf` is created in that location and opened immediately.
+## Setup
 
-## Can it run on another Mac?
+1. Install `MoreMenu.app`
+2. Open `System Settings -> Privacy & Security -> Extensions -> Finder Extensions`
+3. Enable `MoreMenu`
 
-### Build on the other Mac
-
-The simplest reliable method: install Xcode, clone/copy this project, and run:
-
-```bash
-./scripts/install-local.sh
-```
-
-### Shareable release
-
-For distributing to people who should not need to build it themselves, create a proper release build:
-
-- sign with Developer ID
-- notarize with Apple
-
-Without notarization, Gatekeeper on the other Mac will block the first launch.  The user can override this via `System Settings → Privacy & Security → Open Anyway`, but that is an extra friction step.
-
-The local installer intentionally does not create an App Store or notarized release.
-It is for personal use on your own Mac.
-
-## Troubleshooting
-
-### The menu item does not appear
-
-- Confirm the extension is enabled in `System Settings → Privacy & Security → Extensions → Finder Extensions`.
-- Restart Finder: `killall Finder` in Terminal.
-- Verify the extension is registered: `pluginkit -mAvvv -i GMX.MoreMenu.MoreMenuExtension`
-  The `Path` line should point to `~/Applications/MoreMenu.app/...`, not DerivedData.
-- If it points to DerivedData, re-run `./scripts/install-local.sh`.
-- If macOS shows a dialog about **System Extensions**, that is not the relevant switch for MoreMenu. Finder Sync uses the `Finder Extensions` setting above, not the separate System Extensions security flow.
-
-### The app does not open
-
-- Check for an expired provisioning profile:
-  ```bash
-  /usr/bin/log show --style compact --last 5m \
-      --predicate 'eventMessage CONTAINS[c] "Provisioning profile has expired" OR eventMessage CONTAINS[c] "No matching profile found"'
-  ```
-- If that appears, rebuild and reinstall with `./scripts/install-local.sh`.
-
-### The menu item appears but no file is created
-
-- Check that you are working inside your home directory (`~/`).
-  The extension has write access to your entire home directory tree.
-  It does not have access to volumes or directories outside `~`.
-- Check the live extension logs:
-  ```bash
-  /usr/bin/log stream --style compact \
-      --predicate 'subsystem == "GMX.MoreMenu.MoreMenuExtension"'
-  ```
-  If you click a menu item and do not see a `Creating ...` line, reinstall with `./scripts/install-local.sh`.
-
-### The file is not opened automatically
-
-The app uses the default system handler for the selected file type. Check the default
-app assigned to `.txt`, `.md`, or `.rtf` on your system.
-
-### Watching live logs
-
-```bash
-/usr/bin/log stream --style compact \
-    --predicate 'subsystem == "GMX.MoreMenu.MoreMenuExtension"'
-```
+After that, right-click in Finder and choose the file type you want.
 
 ## Notes
 
-- This app uses a Finder Sync Extension because Automator and Shortcuts do not support adding custom items to Finder's empty-space context menu.
-- Finder Sync is an **app extension**, not a macOS system extension. The Recovery-mode System Extensions security setting is not required for this app.
-- File creation uses the `com.apple.security.temporary-exception.files.home-relative-path.read-write` entitlement, which grants the sandboxed extension direct write access to the user's home directory — no bookmarks or IPC with the host app are needed.
+- Finder Sync is an app extension, not a macOS system extension.
+- If macOS shows a System Extensions warning, that is not the setting MoreMenu uses.
+- The relevant switch is always in `Finder Extensions`.
 
-## License
+## Technical Docs
 
-No license file is included yet.
-
----
-
-## Developer notes
-
-### How file creation works
-
-The extension is sandboxed. It writes files directly using:
-
-```swift
-try kind.initialContents.write(to: candidate, options: .atomic)
-```
-
-This is possible because of a single entitlement in `MoreMenuExtension.entitlements`:
-
-```xml
-<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
-<array>
-    <string>/</string>
-</array>
-```
-
-This grants the extension read-write access to the user's entire home directory (`~/`).
-Despite the word "temporary" in the key name, this is a stable entitlement available
-since macOS 10.10 and still supported today.
-
-### Approaches that do not work
-
-Three other mechanisms were tried before finding the above solution.  All three fail:
-
-1. **Direct `FileManager` / `Data().write()`** without the entitlement — EPERM.
-2. **Security-scoped bookmarks passed from the host app via App Group** —
-   `startAccessingSecurityScopedResource()` always returns `false` in the extension
-   process because security-scoped bookmarks are bound to the creating app's bundle ID
-   and cannot activate their scope in a different sandboxed process.
-3. **AppleScript `make new file at` delegated to Finder** — fails with
-   `Finder got an error: Application isn't running` from a sandboxed extension, even
-   though read-only Apple Event queries to Finder (e.g. asking for the insertion
-   location) succeed from the same process.
-
-See [plans/0002_the-solution.md](plans/0002_the-solution.md) for the full post-mortem.
-
-### Why not just use FinderUtilities?
-
-[suolapeikko/FinderUtilities](https://github.com/suolapeikko/FinderUtilities) uses the
-same entitlement and confirmed it works.  MoreMenu differs in three meaningful ways:
-
-| Behaviour | FinderUtilities | MoreMenu |
-|---|---|---|
-| Right-click empty space on Desktop **with no Finder window open** | ✗ silently fails | ✓ falls back to querying Finder for the current location via AppleScript |
-| Right-click **on a file** | ✗ not supported | ✓ creates the file alongside the right-clicked item |
-| Sidebar right-clicks | ✗ menu appears (no `menuKind` guard) | ✓ excluded — no reliable target directory |
-
-FinderUtilities also adds "Open Terminal" and "Copy selected paths" menu items, which
-are outside the scope of MoreMenu.
-
-### Re-registering the extension after a rebuild
-
-macOS caches extension registrations.  After every rebuild:
-
-```bash
-rm -rf ~/Applications/MoreMenu.app
-cp -R ~/Library/Developer/Xcode/DerivedData/MoreMenu-*/Build/Products/Debug/MoreMenu.app \
-      ~/Applications/MoreMenu.app
-pluginkit -a "$HOME/Applications/MoreMenu.app/Contents/PlugIns/MoreMenuExtension.appex"
-pluginkit -e use -i GMX.MoreMenu.MoreMenuExtension
-killall Finder
-```
-
-Always register from `~/Applications`, not from DerivedData — otherwise a subsequent
-clean build will invalidate the registered path.
+Developer-oriented build, release, architecture, and troubleshooting notes are in [DEVELOPER.md](DEVELOPER.md).

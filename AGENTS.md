@@ -6,6 +6,7 @@ Add Finder right-click (context) menu items that create:
 - `untitled.txt`
 - `untitled.md`
 - `untitled.rtf`
+- plus a selectable set of common developer file types such as `json`, `yml`, `ts`, `tsx`, and `vue`
 
 Target: macOS 14 (Sonoma), 15 (Sequoia), and 26 (Tahoe).
 
@@ -229,13 +230,13 @@ Every guess costs the user:
 - **Architecture:**
   - Container app (host) + Finder Sync Extension target
   - Extension registers a directory (or all directories) via `FIFinderSyncController`
-  - Implements `menu(for:)` to return a custom `NSMenu` with three actions:
-    - `New Textfile`
-    - `New Markdown File`
-    - `New Rich Text File`
-  - The actions create `untitled.txt`, `untitled.md`, or `untitled.rtf`
+  - Implements `menu(for:)` to return a custom `NSMenu` driven by shared settings
+  - The host app exposes a checkbox list of supported file types
+  - Core actions create `untitled.txt`, `untitled.md`, or `untitled.rtf`
+  - Optional actions cover common developer formats such as `json`, `yml`, `html`, `css`, `scss`, `js`, `jsx`, `ts`, `tsx`, `vue`, `sh`, and `py`
   - `.rtf` uses a minimal valid RTF payload so rich-text apps open it correctly
   - Menu icons are forced to white for consistent visibility in Finder menus
+  - The containing app and extension share preferences through an App Group
 - **Requirements:**
   - Xcode installed
   - Apple Developer account (free tier works) for code signing
@@ -247,19 +248,29 @@ Every guess costs the user:
 ## Current Implementation
 
 1. The project contains two targets:
-   - Host app (minimal setup UI)
+   - Host app (settings UI)
    - Finder Sync Extension
 2. `FinderSync.swift` currently:
    - Registers `/` so Finder calls the extension for local folders and the Desktop
-   - Adds menu items for plain text, Markdown, and rich text
+   - Reads enabled file types from shared defaults in the App Group
+   - Adds menu items only for the enabled file types
    - Creates `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
    - Falls back to Finder's insertion location for empty-space clicks
-3. Local installation flow:
+3. `ContentView.swift` currently:
+   - Lets the user enable or disable MoreMenu commands in Finder
+   - Lets the user toggle individual file types via checkboxes
+   - Opens the system Finder Extensions settings page
+4. Local installation flow:
    - `./scripts/install-local.sh`
    - installs to `~/Applications`
    - registers the embedded Finder extension
    - restarts Finder
-4. Enablement UI:
+5. Shared settings:
+   - App Group identifier: `group.GMX.MoreMenu`
+   - Shared keys:
+     - `finderMenuEnabled`
+     - `enabledDocumentKeys`
+6. Enablement UI:
    - **System Settings → Privacy & Security → Extensions → Finder Extensions**
 
 ### Key Swift API Reference

@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 1.1.2 - 2026-04-16
+
+### Added
+
+- Local installer script (`scripts/install-local.sh`) — builds the ad hoc Release app, installs it to `~/Applications`, registers the Finder extension from the installed app, removes stale DerivedData registrations, and restarts Finder.
+
+### Changed
+
+- Removed obsolete bookmark/folder-access UI from the host app. The extension no longer uses security-scoped bookmarks.
+- Trimmed unused host-app entitlements (`application-groups`, `files.user-selected.read-write`, `files.bookmarks.app-scope`) and removed unused `files.user-selected.read-write` from the extension.
+- README now recommends the ad hoc local install flow instead of installing Xcode Debug builds from DerivedData, which can expire with Apple Development provisioning profiles.
+- Lowered the extension deployment target from macOS `14.8` to `14.0`, so the installed app and the Finder extension now both target macOS 14 Sonoma and later.
 
 ## 1.1.1 - 2026-04-12
 

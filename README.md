@@ -43,31 +43,27 @@ plans/
 
 ## How to build and install
 
-### In Xcode
+### Local install
+
+For personal use on this Mac, use the local installer:
+
+```bash
+./scripts/install-local.sh
+```
+
+This builds a Release app, signs it ad hoc, copies it to `~/Applications`, registers
+the embedded Finder extension, and restarts Finder.
+
+Do not install the Debug app from Xcode's DerivedData folder for regular use. Debug
+builds signed with a free Apple Development profile can stop launching when the
+embedded provisioning profile expires.
+
+### Xcode build
 
 1. Open `MoreMenu/MoreMenu.xcodeproj`.
 2. In `Signing & Capabilities`, select your Apple team for both the `MoreMenu` and `MoreMenuExtension` targets.
 3. Choose `Product > Build` (or press `Cmd+B`).
-
-### Install and register
-
-After a successful build, run these commands in Terminal:
-
-```bash
-# Remove any previous copy
-rm -rf ~/Applications/MoreMenu.app
-
-# Copy the fresh build
-cp -R ~/Library/Developer/Xcode/DerivedData/MoreMenu-*/Build/Products/Debug/MoreMenu.app \
-      ~/Applications/MoreMenu.app
-
-# Register and enable the extension
-pluginkit -a "$HOME/Applications/MoreMenu.app/Contents/PlugIns/MoreMenuExtension.appex"
-pluginkit -e use -i GMX.MoreMenu.MoreMenuExtension
-
-# Restart Finder
-killall Finder
-```
+4. Run `./scripts/install-local.sh` from Terminal to install the durable local build.
 
 ### Enable in System Settings
 
@@ -86,7 +82,11 @@ A new `untitled.txt` is created in that location and opened immediately.
 
 ### Build on the other Mac
 
-The simplest reliable method: open the project in Xcode on the other Mac with a valid Apple ID, build, and install using the commands above.
+The simplest reliable method: install Xcode, clone/copy this project, and run:
+
+```bash
+./scripts/install-local.sh
+```
 
 ### Shareable release
 
@@ -97,6 +97,9 @@ For distributing to people who should not need to build it themselves, create a 
 
 Without notarization, Gatekeeper on the other Mac will block the first launch.  The user can override this via `System Settings → Privacy & Security → Open Anyway`, but that is an extra friction step.
 
+The local installer intentionally does not create an App Store or notarized release.
+It is for personal use on your own Mac.
+
 ## Troubleshooting
 
 ### The menu item does not appear
@@ -105,7 +108,16 @@ Without notarization, Gatekeeper on the other Mac will block the first launch.  
 - Restart Finder: `killall Finder` in Terminal.
 - Verify the extension is registered: `pluginkit -mAvvv -i GMX.MoreMenu.MoreMenuExtension`
   The `Path` line should point to `~/Applications/MoreMenu.app/...`, not DerivedData.
-- If it points to DerivedData, re-run the install commands above.
+- If it points to DerivedData, re-run `./scripts/install-local.sh`.
+
+### The app does not open
+
+- Check for an expired provisioning profile:
+  ```bash
+  /usr/bin/log show --style compact --last 5m \
+      --predicate 'eventMessage CONTAINS[c] "Provisioning profile has expired" OR eventMessage CONTAINS[c] "No matching profile found"'
+  ```
+- If that appears, rebuild and reinstall with `./scripts/install-local.sh`.
 
 ### The menu item appears but no file is created
 

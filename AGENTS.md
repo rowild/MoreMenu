@@ -248,18 +248,22 @@ Every guess costs the user:
 ## Current Implementation
 
 1. The project contains two targets:
-   - Host app (settings UI)
+   - Host app (settings UI + folder authorization)
    - Finder Sync Extension
 2. `FinderSync.swift` currently:
-   - Registers `/` so Finder calls the extension for local folders and the Desktop
+   - Registers the real user Home plus any authorized folders via `FIFinderSyncController.directoryURLs`
+   - Resolves the real user Home via `getpwuid(getuid())` (never `FileManager.default.homeDirectoryForCurrentUser`, which returns the sandbox container home)
    - Reads enabled file types from shared defaults in the App Group
    - Adds menu items only for the enabled file types
    - Creates `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
    - Falls back to Finder's insertion location for empty-space clicks
+   - For Home-folder targets: writes directly via the `home-relative-path` entitlement
+   - For non-home targets: resolves the shared minimal bookmark, promotes it to a local `.withSecurityScope` bookmark (cached in the extension's private `UserDefaults`), and writes under that scope
 3. `ContentView.swift` currently:
    - Lets the user enable or disable MoreMenu commands in Finder
    - Lets the user toggle individual file types via checkboxes
    - Opens the system Finder Extensions settings page
+   - Hosts the `Authorized Folders` pane for external-drive access, with selection validation that rejects system roots and Home-subtree picks
 4. Local installation flow:
    - `./scripts/install-local.sh`
    - installs to `~/Applications`
@@ -270,8 +274,31 @@ Every guess costs the user:
    - Shared keys:
      - `finderMenuEnabled`
      - `enabledDocumentKeys`
+     - `sharedAuthorizedFolderEntries` — array of `{ path, minimalBookmarkData }`
 6. Enablement UI:
    - **System Settings → Privacy & Security → Extensions → Finder Extensions**
+
+### Entitlements (verified required set)
+
+Host app:
+- `app-sandbox`, `application-groups`
+- `files.bookmarks.app-scope`
+- `files.user-selected.read-write`
+
+Finder Sync extension:
+- `app-sandbox`, `application-groups`
+- `files.bookmarks.app-scope` — required to resolve any bookmark at all
+- `files.user-selected.read-write` — required for the sandbox to honor writes under a resolved scope
+- `temporary-exception.files.home-relative-path.read-write` = `/` — covers the Home folder fast-path
+
+### Cross-process bookmark constraint (verified)
+
+Security-scoped bookmark data is NOT portable between the host and its Finder Sync extension even through the same App Group. Attempting to resolve a `.withSecurityScope` bookmark that was serialized in another process yields `NSCocoaErrorDomain Code=259` ("file couldn't be opened because it isn't in the correct format"). The verified workaround is:
+
+1. Host writes a `.minimalBookmark` to shared App Group defaults.
+2. Extension resolves with `.withoutUI`, mints its own `.withSecurityScope` bookmark from the resolved URL, stores it in the extension's private (non-shared) `UserDefaults`, and starts/stops access from that local bookmark on every invocation.
+
+Source: [Apple Dev Forum 66259](https://developer.apple.com/forums/thread/66259).
 
 ### Key Swift API Reference
 - `FIFinderSyncController.default()` — singleton controller
@@ -289,3 +316,6 @@ Every guess costs the user:
 - https://stackoverflow.com/questions/6461643 — Finder Sync Extension overview
 - https://cmsj.net/2025/05/23/finder-action-swift6.html — Swift 6 Finder extension with async
 - https://texs.org/finder-right-click-new-file/ — Automator AppleScript approach
+- https://developer.apple.com/forums/thread/66259 — Share security scoped bookmark in app group? (Code 259 workaround)
+- https://developer.apple.com/forums/thread/687614 — Creating new text file using Finder Sync (approved access patterns)
+- https://developer.apple.com/forums/thread/717098 — Finder Sync Extension does not allow... (sandboxed extension file access)

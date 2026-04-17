@@ -79,6 +79,19 @@ MoreMenu keeps those commands at the first menu level and opens the result immed
 
 After that, right-click in Finder and choose the file type you want.
 
+## Working On External Drives
+
+Folders inside your Home folder (`~/Desktop`, `~/Documents`, projects, and so on) work automatically.
+
+For locations outside your Home folder — external drives, network volumes, or any folder under `/Volumes` — you authorize them once:
+
+1. Open `MoreMenu.app`
+2. Click the `Authorized Folders` tab
+3. Click `Add Folder...`
+4. Pick the parent folder you want MoreMenu to work inside (the whole subtree is covered)
+
+System roots like `/`, `/Users`, or `/Volumes` itself cannot be authorized — pick an actual folder on the drive. Picks inside your Home folder are also skipped since they are already covered.
+
 ## Notes
 
 - Finder Sync is an app extension, not a macOS system extension.

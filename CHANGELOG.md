@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.5 - 2026-04-17
+
+### Added
+
+- Authorized Folders pane in the host app for granting MoreMenu access to external drives and other locations outside the user's home folder. The host stores a security-scoped bookmark for the picked folder and writes a minimal bookmark into the shared App Group for the extension.
+- Extension-side two-step bookmark promotion: the Finder Sync extension resolves the shared minimal bookmark with `.withoutUI`, mints its own `.withSecurityScope` bookmark in its private `UserDefaults`, and reuses that cached bookmark on subsequent invocations. Works around the Code 259 failure documented in Apple dev-forum 66259 when passing security-scoped bookmarks through an App Group.
+- Selection validation in the Add Folder panel. System roots (`/`, `/Users`, `/Volumes`, `/System`, `/Library`, `/private`) and paths inside the real user home are rejected with a short reason; stale records that fall into these buckets are purged on launch.
+
+### Changed
+
+- Finder Sync extension entitlements now include `com.apple.security.files.bookmarks.app-scope` and `com.apple.security.files.user-selected.read-write`. Without these the extension could not resolve bookmarks at all and the sandbox denied writes to `/Volumes/...`.
+- Extension now derives the real user home via `getpwuid(getuid())` instead of `FileManager.default.homeDirectoryForCurrentUser`. Inside a sandboxed extension the latter returns the container's home (`…/Library/Containers/<bundle id>/Data`), which broke the home fast-path and routed ordinary `~/Desktop` writes through the bookmark flow.
+- `FIFinderSyncController.directoryURLs` is now registered with the real user home plus any authorized folders, so macOS calls the extension for the locations it is actually authorized to work in.
+
+### Fixed
+
+- New-file items appeared in Finder on external drives but no file was created. Resolved by the entitlement additions, the real-home fix, and the two-step bookmark promotion described above.
+- Stale authorized-folder records for unreachable system paths no longer cause repeating `Could not open() the item` errors; they are silently filtered out during `refreshAccessCache`.
+
 ## 1.1.4 - 2026-04-16
 
 ### Added

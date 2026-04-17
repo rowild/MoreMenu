@@ -100,7 +100,9 @@ The extension writes files directly with:
 try kind.initialContents.write(to: candidate, options: .atomic)
 ```
 
-That works because the extension has this entitlement:
+### Home folder
+
+Inside the user's real Home folder, writes succeed because of:
 
 ```xml
 <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
@@ -109,7 +111,24 @@ That works because the extension has this entitlement:
 </array>
 ```
 
-That grants read/write access inside the user's home directory tree.
+The real user Home is resolved via `getpwuid(getuid())` — `FileManager.default.homeDirectoryForCurrentUser` inside a sandboxed extension returns the container home (`…/Library/Containers/<bundle id>/Data`), which is not what the `home-relative-path` entitlement is evaluated against.
+
+### External drives and non-home locations
+
+Non-home writes use security-scoped bookmarks. The flow is two-staged because Apple does not support round-tripping a `.withSecurityScope` bookmark through an App Group (dev-forum 66259, Code 259 "not in the correct format"):
+
+1. Host app: `NSOpenPanel` → creates a `.withSecurityScope` bookmark for its own records, plus a `.minimalBookmark` written to shared App Group defaults under `sharedAuthorizedFolderEntries`.
+2. Extension: reads the minimal bookmark → resolves with `.withoutUI` → mints its own `.withSecurityScope` bookmark from the resolved URL → caches it in the extension's private `UserDefaults` keyed by authorized-parent path.
+3. Extension: subsequent invocations resolve the cached local bookmark, call `startAccessingSecurityScopedResource()`, write, stop. Stale bookmarks auto-recover by triggering a re-promotion from the shared minimal bookmark.
+
+Required entitlements on the extension (in addition to `app-sandbox` and `application-groups`):
+
+```xml
+<key>com.apple.security.files.bookmarks.app-scope</key>
+<true/>
+<key>com.apple.security.files.user-selected.read-write</key>
+<true/>
+```
 
 `.rtf` is special-cased to write a minimal valid rich-text payload. The other supported file types currently start as empty files.
 
@@ -134,12 +153,17 @@ That grants read/write access inside the user's home directory tree.
 
 ### The menu appears but no file is created
 
-- MoreMenu only has write access inside `~/`
-- watch live extension logs:
+- Inside Home folder: writes should work via the `home-relative-path` entitlement.
+- On external drives or outside Home: confirm you have authorized the parent folder under `MoreMenu.app` → `Authorized Folders`.
+- Watch live extension logs:
   ```bash
   /usr/bin/log stream --style compact \
       --predicate 'subsystem == "GMX.MoreMenu.MoreMenuExtension"'
   ```
+- Common log signatures:
+  - `accessNotGranted(...)` → no authorized-folder entry matches the target path
+  - `Minting local scoped bookmark failed ...` → the authorized entry points at a path the sandbox cannot reach (usually a system root); remove it in `Authorized Folders`
+  - `Creating <ext> file in: <path>` followed by no error → write succeeded
 
 ### The app does not launch
 

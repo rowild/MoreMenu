@@ -79,18 +79,17 @@ MoreMenu keeps those commands at the first menu level and opens the result immed
 
 After that, right-click in Finder and choose the file type you want.
 
-## Working On External Drives
+## Scope
 
-Folders inside your Home folder (`~/Desktop`, `~/Documents`, projects, and so on) work automatically.
+MoreMenu creates files anywhere inside your Home folder — `~/Desktop`, `~/Documents`, `~/Downloads`, and any subfolder of those. That's the supported scope for this build.
 
-For locations outside your Home folder — external drives, network volumes, or any folder under `/Volumes` — you authorize them once:
+External drives under `/Volumes/*` are **not** supported in this build. Right-clicking there will show the menu but creating a file will fail silently. Supporting `/Volumes/*` cleanly on macOS Tahoe requires a signed Developer ID build; see [DEVELOPER.md](DEVELOPER.md) if you're interested in the technical reason.
 
-1. Open `MoreMenu.app`
-2. Click the `Authorized Folders` tab
-3. Click `Add Folder...`
-4. Pick the parent folder you want MoreMenu to work inside (the whole subtree is covered)
+## First-Install Prompt
 
-System roots like `/`, `/Users`, or `/Volumes` itself cannot be authorized — pick an actual folder on the drive. Picks inside your Home folder are also skipped since they are already covered.
+The first time you launch MoreMenu after a fresh install, macOS may show a "MoreMenu.app would like to access…" prompt. Click **Allow** once. macOS remembers the decision.
+
+If you reinstall the app from an updated DMG, the prompt may reappear — this is a side-effect of the current ad-hoc signing used in the GitHub builds. Clicking Allow once more is enough.
 
 ## Notes
 

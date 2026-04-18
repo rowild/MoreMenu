@@ -25,15 +25,36 @@ mkdir -p "$HOME/Applications"
 rm -rf "$APP_DST"
 cp -R "$APP_SRC" "$APP_DST"
 
-echo "==> Removing stale MoreMenuExtension registrations from DerivedData"
-if [[ -d "$HOME/Library/Developer/Xcode/DerivedData" ]]; then
-  find "$HOME/Library/Developer/Xcode/DerivedData" \
-    -path "*$APP_NAME/Contents/PlugIns/MoreMenuExtension.appex" \
-    -type d \
-    -print | while IFS= read -r stale_extension; do
-      pluginkit -r "$stale_extension" || true
-    done
-fi
+# 1.2.0 migration: clean up state from the 1.1.5-1.1.7 bookmark architecture.
+# The extension cached local scoped bookmarks in its private UserDefaults and
+# the App Group held authorizedFolderRecords + sharedAuthorizedFolderEntries.
+# None of that is used anymore; leaving it in place can only confuse things.
+echo "==> Cleaning up legacy authorized-folder state"
+defaults delete GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
+defaults delete group.GMX.MoreMenu sharedAuthorizedFolderEntries 2>/dev/null || true
+defaults delete group.GMX.MoreMenu authorizedFolderRecords 2>/dev/null || true
+
+# Reset the TCC record that actually fires for MoreMenu on Tahoe 26.4 —
+# SystemPolicyAppData, NOT SystemPolicyAppBundles. The prompt text is shared
+# between these two services, which misled the 1.2.0 installer. Under ad-hoc
+# signing this reset does NOT prevent the prompt (the csreq can't be made
+# stable without a Developer ID), but it stops the stored csreq from getting
+# stale and aligns the TCC row to the current build. See
+# .claude/plans/0004_new_research_on_rightclick_permission.md §11.2 and §12.3.
+tccutil reset SystemPolicyAppData GMX.MoreMenu 2>/dev/null || true
+tccutil reset SystemPolicyAppData GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
+
+echo "==> Removing stale MoreMenuExtension registrations from DerivedData and build temp"
+for stale_root in "$HOME/Library/Developer/Xcode/DerivedData" "/private/tmp/moremenu-build" "$ROOT_DIR/.build"; do
+  if [[ -d "$stale_root" ]]; then
+    find "$stale_root" \
+      -path "*$APP_NAME/Contents/PlugIns/MoreMenuExtension.appex" \
+      -type d \
+      -print | while IFS= read -r stale_extension; do
+        pluginkit -r "$stale_extension" || true
+      done
+  fi
+done
 
 pluginkit -r "$BUILT_EXTENSION" 2>/dev/null || true
 sleep 1

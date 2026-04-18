@@ -245,60 +245,56 @@ Every guess costs the user:
 
 ---
 
-## Current Implementation
+## Current Implementation (1.2.1+)
 
 1. The project contains two targets:
-   - Host app (settings UI + folder authorization)
+   - Host app (settings UI)
    - Finder Sync Extension
-2. `FinderSync.swift` currently:
-   - Registers the real user Home plus any authorized folders via `FIFinderSyncController.directoryURLs`
-   - Resolves the real user Home via `getpwuid(getuid())` (never `FileManager.default.homeDirectoryForCurrentUser`, which returns the sandbox container home)
+2. `FinderSync.swift`:
+   - Registers `FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/")]` once in `init()` and never touches it again. Pinned by `FinderSyncInvariantTests`.
    - Reads enabled file types from shared defaults in the App Group
    - Adds menu items only for the enabled file types
    - Creates `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
    - Falls back to Finder's insertion location for empty-space clicks
-   - For Home-folder targets: writes directly via the `home-relative-path` entitlement
-   - For non-home targets: resolves the shared minimal bookmark, promotes it to a local `.withSecurityScope` bookmark (cached in the extension's private `UserDefaults`), and writes under that scope
-3. `ContentView.swift` currently:
+   - Writes directly to the target URL. No bookmark handling, no `startAccessingSecurityScopedResource()`, no home/non-home fast path.
+3. `ContentView.swift`:
    - Lets the user enable or disable MoreMenu commands in Finder
    - Lets the user toggle individual file types via checkboxes
    - Opens the system Finder Extensions settings page
-   - Hosts the `Authorized Folders` pane for external-drive access, with selection validation that rejects system roots and Home-subtree picks
 4. Local installation flow:
    - `./scripts/install-local.sh`
    - installs to `~/Applications`
    - registers the embedded Finder extension
+   - purges legacy `authorizedFolderRecords` / `sharedAuthorizedFolderEntries` state and resets `SystemPolicyAppData` TCC for both bundle IDs
    - restarts Finder
 5. Shared settings:
    - App Group identifier: `group.GMX.MoreMenu`
    - Shared keys:
      - `finderMenuEnabled`
      - `enabledDocumentKeys`
-     - `sharedAuthorizedFolderEntries` — array of `{ path, minimalBookmarkData }`
 6. Enablement UI:
    - **System Settings → Privacy & Security → Extensions → Finder Extensions**
 
-### Entitlements (verified required set)
+### Entitlements
 
 Host app:
 - `app-sandbox`, `application-groups`
-- `files.bookmarks.app-scope`
-- `files.user-selected.read-write`
 
 Finder Sync extension:
 - `app-sandbox`, `application-groups`
-- `files.bookmarks.app-scope` — required to resolve any bookmark at all
-- `files.user-selected.read-write` — required for the sandbox to honor writes under a resolved scope
-- `temporary-exception.files.home-relative-path.read-write` = `/` — covers the Home folder fast-path
+- `com.apple.security.temporary-exception.files.home-relative-path.read-write` = `/` — grants the extension sandbox capability to create files anywhere under the user's home folder. The leading `/` is the home root, not the filesystem root. Writes to `/Volumes/*` are denied by the sandbox and surface as a logged error plus `NSSound.beep()`.
 
-### Cross-process bookmark constraint (verified)
+### Scope: home-only, not filesystem-wide
 
-Security-scoped bookmark data is NOT portable between the host and its Finder Sync extension even through the same App Group. Attempting to resolve a `.withSecurityScope` bookmark that was serialized in another process yields `NSCocoaErrorDomain Code=259` ("file couldn't be opened because it isn't in the correct format"). The verified workaround is:
+External drives under `/Volumes/*` are intentionally unsupported in this build. FiScript ships `temporary-exception.files.absolute-path.read-write = /` on the App Store for wider scope, but that entitlement only works silently under a stable code signature (Developer ID or App Store). This project currently uses ad-hoc signing (`CODE_SIGNING_ALLOWED=NO` + post-build `codesign --sign -`), which cannot produce a stable TCC `csreq` on macOS Tahoe 26.4. Narrowing the entitlement scope matches what the build can actually deliver.
 
-1. Host writes a `.minimalBookmark` to shared App Group defaults.
-2. Extension resolves with `.withoutUI`, mints its own `.withSecurityScope` bookmark from the resolved URL, stores it in the extension's private (non-shared) `UserDefaults`, and starts/stops access from that local bookmark on every invocation.
+### Historical notes
 
-Source: [Apple Dev Forum 66259](https://developer.apple.com/forums/thread/66259).
+- **1.1.5–1.1.7**: implemented external-drive access using security-scoped bookmarks handed from host to extension through an App Group. Deleted entirely in 1.2.0.
+- **1.2.0**: first attempted `absolute-path = /` entitlement to match FiScript. Shipped but still exhibited the TCC prompt on every reinstall and missing menu items on `/Volumes/*`. Post-install investigation showed the root cause was ad-hoc signing, not the entitlement set.
+- **1.2.1**: narrowed to `home-relative-path = /`, corrected the TCC reset service in `install-local.sh` (`SystemPolicyAppData`, not `SystemPolicyAppBundles`), documented the signing-level limitation.
+
+Full research and reasoning: [.claude/plans/0004_new_research_on_rightclick_permission.md](.claude/plans/0004_new_research_on_rightclick_permission.md) §0, §11, §12.
 
 ### Key Swift API Reference
 - `FIFinderSyncController.default()` — singleton controller

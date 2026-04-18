@@ -11,13 +11,10 @@ import SwiftUI
 private let sharedDefaultsSuiteName = "group.GMX.MoreMenu"
 private let finderMenuEnabledKey = "finderMenuEnabled"
 private let enabledDocumentKeysKey = "enabledDocumentKeys"
-private let authorizedFolderRecordsKey = "authorizedFolderRecords"
-private let sharedAuthorizedFolderEntriesKey = "sharedAuthorizedFolderEntries"
 
 private enum SettingsPane: String, CaseIterable, Identifiable {
     case finder
     case fileTypes
-    case authorizedFolders
 
     var id: String { rawValue }
 
@@ -27,8 +24,6 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
             return "Finder"
         case .fileTypes:
             return "File Types"
-        case .authorizedFolders:
-            return "Authorized Folders"
         }
     }
 
@@ -38,8 +33,6 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
             return "finder"
         case .fileTypes:
             return "doc.text"
-        case .authorizedFolders:
-            return "externaldrive.badge.plus"
         }
     }
 }
@@ -61,17 +54,6 @@ private struct DocumentPreference: Identifiable, Hashable {
     let note: String
 
     var id: String { key }
-}
-
-private struct AuthorizedFolderRecord: Codable, Identifiable, Hashable {
-    let id: UUID
-    var path: String
-    var persistentBookmark: Data
-}
-
-private struct SharedAuthorizedFolderEntry: Codable, Hashable {
-    var path: String
-    var bookmarkData: Data
 }
 
 private let documentPreferences: [DocumentPreference] = [
@@ -305,254 +287,9 @@ private final class SettingsStore: ObservableObject {
     }
 }
 
-@MainActor
-private final class AuthorizedFoldersStore: ObservableObject {
-    @Published private(set) var folders: [AuthorizedFolderRecord] = []
-    @Published var statusMessage = "Folders in your Home folder work automatically. Authorize external drives or other locations once here."
-
-    private let defaults: UserDefaults
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    init(defaults: UserDefaults = UserDefaults(suiteName: sharedDefaultsSuiteName) ?? .standard) {
-        self.defaults = defaults
-        reload()
-    }
-
-    func addFolders() {
-        let panel = NSOpenPanel()
-        panel.title = "Authorize Folders"
-        panel.message = "Choose one or more folders on external drives or outside your Home folder."
-        panel.prompt = "Authorize"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.directoryURL = URL(fileURLWithPath: "/Volumes")
-
-        guard panel.runModal() == .OK else {
-            statusMessage = "Folder authorization was not changed."
-            return
-        }
-
-        var records = loadRecords()
-        var addedPaths: [String] = []
-        var rejectedPaths: [(path: String, reason: String)] = []
-
-        for selectedURL in panel.urls {
-            let standardizedURL = selectedURL.standardizedFileURL
-
-            // TODO(user): decide the rejection policy for selected paths.
-            // Returning a non-nil String rejects the folder with that reason;
-            // returning nil accepts it.
-            //
-            // Known-bad buckets to consider:
-            //  - inside or equal to the real user home → already covered by
-            //    the extension's home-relative-path entitlement, record is
-            //    redundant.
-            //  - path is "/", "/Users", "/Volumes" → sandbox cannot actually
-            //    grant access to these roots; bookmark minting will fail.
-            //  - anywhere else → almost certainly a valid external/non-home
-            //    target we want to accept.
-            if let reason = rejectionReason(for: standardizedURL) {
-                rejectedPaths.append((standardizedURL.path, reason))
-                continue
-            }
-
-            let started = standardizedURL.startAccessingSecurityScopedResource()
-            defer {
-                if started {
-                    standardizedURL.stopAccessingSecurityScopedResource()
-                }
-            }
-
-            do {
-                let bookmark = try standardizedURL.bookmarkData(
-                    options: [.withSecurityScope],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-
-                let path = standardizedURL.path
-                records.removeAll { $0.path == path }
-                records.append(
-                    AuthorizedFolderRecord(
-                        id: UUID(),
-                        path: path,
-                        persistentBookmark: bookmark
-                    )
-                )
-                addedPaths.append(path)
-            } catch {
-                statusMessage = "Failed to store folder access for \(standardizedURL.path): \(error.localizedDescription)"
-            }
-        }
-
-        persist(records)
-        refreshAccessCache()
-
-        if !addedPaths.isEmpty && rejectedPaths.isEmpty {
-            statusMessage = "Authorized \(addedPaths.count) folder(s). External locations should now work after Finder refreshes its context menu."
-        } else if !rejectedPaths.isEmpty {
-            let skipped = rejectedPaths
-                .map { "Skipped \($0.path): \($0.reason)" }
-                .joined(separator: "\n")
-            if addedPaths.isEmpty {
-                statusMessage = skipped
-            } else {
-                statusMessage = "Authorized \(addedPaths.count) folder(s).\n\(skipped)"
-            }
-        }
-    }
-
-    private func rejectionReason(for url: URL) -> String? {
-        let path = url.standardizedFileURL.path
-        let forbidden: Set<String> = ["/", "/Users", "/Volumes", "/System", "/Library", "/private"]
-        if forbidden.contains(path) {
-            return "system root folders cannot be authorized"
-        }
-        let realHome = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
-        if path == realHome || path.hasPrefix(realHome + "/") {
-            return "already covered by MoreMenu's built-in Home-folder access"
-        }
-        return nil
-    }
-
-    func remove(_ folder: AuthorizedFolderRecord) {
-        let remaining = loadRecords().filter { $0.id != folder.id }
-        persist(remaining)
-        refreshAccessCache()
-        statusMessage = "Removed authorization for \(folder.path)."
-    }
-
-    func refreshAccessCache() {
-        var refreshedRecords: [AuthorizedFolderRecord] = []
-        var sharedEntries: [SharedAuthorizedFolderEntry] = []
-        var staleCount = 0
-
-        for record in loadRecords() {
-            if rejectionReason(for: URL(fileURLWithPath: record.path)) != nil {
-                continue
-            }
-            do {
-                var isStale = false
-                let resolvedURL = try URL(
-                    resolvingBookmarkData: record.persistentBookmark,
-                    options: [.withSecurityScope],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                )
-
-                let standardizedURL = resolvedURL.standardizedFileURL
-                let started = standardizedURL.startAccessingSecurityScopedResource()
-                defer {
-                    if started {
-                        standardizedURL.stopAccessingSecurityScopedResource()
-                    }
-                }
-
-                guard started else {
-                    statusMessage = "Could not refresh folder access for \(record.path). Re-authorize it if external-folder creation stops working."
-                    continue
-                }
-
-                var refreshedRecord = record
-                if isStale || record.path != standardizedURL.path {
-                    staleCount += 1
-                    refreshedRecord.path = standardizedURL.path
-                    refreshedRecord.persistentBookmark = try standardizedURL.bookmarkData(
-                        options: [.withSecurityScope],
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
-                    )
-                }
-
-                // Minimal bookmark for cross-process sharing via App Group.
-                // Security-scoped bookmark data is not portable between the host
-                // and its Finder Sync extension (Apple dev-forum 66259); the
-                // extension resolves this minimal bookmark with .withoutUI and
-                // then mints its own .withSecurityScope bookmark locally.
-                let sharedBookmark = try standardizedURL.bookmarkData(
-                    options: [.minimalBookmark],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-
-                refreshedRecords.append(refreshedRecord)
-                sharedEntries.append(
-                    SharedAuthorizedFolderEntry(
-                        path: standardizedURL.path,
-                        bookmarkData: sharedBookmark
-                    )
-                )
-            } catch {
-                statusMessage = "Failed to refresh external-folder access: \(error.localizedDescription)"
-            }
-        }
-
-        persist(refreshedRecords)
-        persistSharedEntries(sharedEntries)
-
-        if folders.isEmpty && refreshedRecords.isEmpty {
-            statusMessage = "Folders in your Home folder work automatically. Authorize external drives or other locations once here."
-        } else if !refreshedRecords.isEmpty {
-            statusMessage = staleCount == 0
-                ? "Authorized folders are ready. External locations matching these folders should work."
-                : "Authorized folders were refreshed. \(staleCount) stale bookmark(s) were updated."
-        }
-    }
-
-    func rowNote(for folder: AuthorizedFolderRecord) -> String {
-        isInsideHomeDirectory(folder.path)
-            ? "Already covered by MoreMenu's built-in Home-folder access."
-            : "Used for folders on external drives and other locations outside your Home folder."
-    }
-
-    private func reload() {
-        folders = loadRecords().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-        refreshAccessCache()
-        folders = loadRecords().sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-    }
-
-    private func persist(_ records: [AuthorizedFolderRecord]) {
-        folders = records.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-
-        if let data = try? encoder.encode(folders) {
-            defaults.set(data, forKey: authorizedFolderRecordsKey)
-        } else {
-            defaults.removeObject(forKey: authorizedFolderRecordsKey)
-        }
-    }
-
-    private func persistSharedEntries(_ entries: [SharedAuthorizedFolderEntry]) {
-        if let data = try? encoder.encode(entries) {
-            defaults.set(data, forKey: sharedAuthorizedFolderEntriesKey)
-        } else {
-            defaults.removeObject(forKey: sharedAuthorizedFolderEntriesKey)
-        }
-    }
-
-    private func loadRecords() -> [AuthorizedFolderRecord] {
-        guard
-            let data = defaults.data(forKey: authorizedFolderRecordsKey),
-            let records = try? decoder.decode([AuthorizedFolderRecord].self, from: data)
-        else {
-            return []
-        }
-
-        return records
-    }
-
-    private func isInsideHomeDirectory(_ path: String) -> Bool {
-        let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
-        return path == homePath || path.hasPrefix(homePath + "/")
-    }
-}
-
 struct ContentView: View {
     @State private var selectedPane: SettingsPane = .finder
     @StateObject private var settings = SettingsStore()
-    @StateObject private var authorizedFolders = AuthorizedFoldersStore()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -586,8 +323,6 @@ struct ContentView: View {
                     }
                 case .fileTypes:
                     FileTypesPane(settings: settings)
-                case .authorizedFolders:
-                    AuthorizedFoldersPane(store: authorizedFolders)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -714,74 +449,6 @@ private struct FileTypesPane: View {
                     }
                 }
             }
-        }
-    }
-}
-
-private struct AuthorizedFoldersPane: View {
-    @ObservedObject var store: AuthorizedFoldersStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            PaneHeader(
-                title: "Authorized Folders",
-                subtitle: "Folders in your Home folder already work. Use this page for external drives and other locations outside your Home folder."
-            )
-
-            HStack(spacing: 12) {
-                Button("Add Folder...") {
-                    store.addFolders()
-                }
-
-                Button("Refresh Access") {
-                    store.refreshAccessCache()
-                }
-            }
-
-            Text(store.statusMessage)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if store.folders.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("No external folders authorized")
-                        .font(.headline)
-                    Text("Add a parent folder once. MoreMenu will then work inside that folder and its subfolders on external drives and other non-Home locations.")
-                        .foregroundStyle(.secondary)
-                }
-                .padding(22)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
-            } else {
-                List {
-                    ForEach(store.folders) { folder in
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "folder")
-                                .foregroundStyle(.secondary)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(folder.path)
-                                    .textSelection(.enabled)
-                                Text(store.rowNote(for: folder))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer(minLength: 16)
-
-                            Button("Remove") {
-                                store.remove(folder)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                        .padding(.vertical, 6)
-                    }
-                }
-                .listStyle(.inset)
-            }
-
-            Spacer(minLength: 0)
         }
     }
 }

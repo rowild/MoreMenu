@@ -4,39 +4,28 @@
 //
 //  Created by Robert Wildling on 2026-04-07.
 //
-//  Access model:
-//  - Home-folder targets use the existing home-relative-path entitlement and
-//    skip the bookmark dance entirely.
-//  - Non-home targets (external drives, /Volumes, arbitrary locations) are
-//    authorized by the user in the host app. The host serializes a
-//    .minimalBookmark into the shared App Group defaults. On first use the
-//    extension resolves that minimal bookmark (.withoutUI), mints a local
-//    .withSecurityScope bookmark from the resolved URL, caches it in the
-//    extension's private UserDefaults, and starts security-scoped access
-//    from the cached bookmark on every subsequent invocation.
-//
-//  This two-step handoff is necessary because security-scoped bookmark data
-//  is not portable across the host/extension boundary even inside the same
-//  App Group — see Apple dev-forum 66259 ("Share security scoped bookmark in
-//  app group?"), which documents the Code=259 "not in the correct format"
-//  failure when trying to round-trip a .withSecurityScope bookmark through
-//  shared defaults.
+//  Access model (1.2.1+):
+//  The extension's entitlements grant
+//  `com.apple.security.temporary-exception.files.home-relative-path.read-write = /`,
+//  which gives the sandbox the capability to write anywhere under the user's
+//  home folder. Locations outside the home (notably `/Volumes/*` external
+//  drives) are intentionally not supported: adding `absolute-path = /` works
+//  for App-Store-signed apps like FiScript, but under the project's current
+//  ad-hoc signing it cannot produce a stable TCC code requirement on macOS
+//  Tahoe 26.4 and therefore cannot work silently across reinstalls. The
+//  home-relative scope matches what version 1.1 shipped with and what the
+//  user has consistently accepted ("prompted once after a new install").
+//  See .claude/plans/0004_new_research_on_rightclick_permission.md for the
+//  full signing/TCC research.
 //
 
 import Cocoa
-import Darwin
 import FinderSync
 import OSLog
 
 private let sharedDefaultsSuiteName = "group.GMX.MoreMenu"
 private let finderMenuEnabledKey = "finderMenuEnabled"
 private let enabledDocumentKeysKey = "enabledDocumentKeys"
-private let sharedAuthorizedFolderEntriesKey = "sharedAuthorizedFolderEntries"
-
-private struct SharedAuthorizedFolderEntry: Codable, Hashable {
-    var path: String
-    var bookmarkData: Data
-}
 
 class FinderSync: FIFinderSync {
 
@@ -216,30 +205,42 @@ class FinderSync: FIFinderSync {
         }
     }
 
-    private struct FolderAccessScope {
-        let stopAccessing: () -> Void
-
-        static let none = FolderAccessScope(stopAccessing: {})
-    }
-
     // MARK: - Properties
 
     private let logger = Logger(subsystem: "GMX.MoreMenu.MoreMenuExtension", category: "FinderSync")
     private var currentMenuKind: FIMenuKind = .contextualMenuForContainer
-    private var observedDirectoryURL: URL?
+
+    /// Real user home directory. Inside a sandboxed extension
+    /// `FileManager.default.homeDirectoryForCurrentUser` returns the
+    /// container's home (`…/Library/Containers/<bundle id>/Data`), which
+    /// would make the home-scope check reject every real user folder.
+    /// `getpwuid(getuid())` returns the actual login home regardless of
+    /// sandbox, which is what the `home-relative-path` entitlement covers.
+    private static let realUserHomePath: String = {
+        if let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir {
+            return String(cString: home)
+        }
+        return NSHomeDirectory()
+    }()
 
     // MARK: - Init
 
     override init() {
         super.init()
-        refreshMonitoredDirectories()
+        // Monitor the filesystem root. macOS's Finder Sync framework treats
+        // "/" specially — it means "call me for any local folder Finder shows"
+        // — and does NOT classify this as cross-app data access for App
+        // Management. Registering a user-home path (e.g. "/Users/<user>")
+        // instead causes macOS to treat the extension as observing every
+        // other installed app's Container under ~/Library/Containers and
+        // raises the Sonoma App Management consent prompt whenever another
+        // app is launched. Invariant pinned by FinderSyncInvariantTests.
+        FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/")]
     }
 
     // MARK: - FIFinderSync overrides
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
-        refreshMonitoredDirectories()
-
         guard menuKind == .contextualMenuForContainer || menuKind == .contextualMenuForItems else {
             return NSMenu(title: "")
         }
@@ -247,7 +248,15 @@ class FinderSync: FIFinderSync {
         let menu = NSMenu(title: "")
         let enabledKinds = activeDocumentKinds()
 
-        guard targetDirectory(for: menuKind) != nil, !enabledKinds.isEmpty else {
+        guard let target = targetDirectory(for: menuKind), !enabledKinds.isEmpty else {
+            return menu
+        }
+
+        // Hide the menu in locations the sandbox entitlement can't reach:
+        // filesystem root `/`, `/Volumes/*`, other users' homes, `/tmp`,
+        // `/Applications`, etc. The user gets no false affordance for file
+        // creation that would silently fail.
+        guard isInsideUserHome(target) else {
             return menu
         }
 
@@ -267,16 +276,6 @@ class FinderSync: FIFinderSync {
         return menu
     }
 
-    override func beginObservingDirectory(at url: URL) {
-        observedDirectoryURL = url.standardizedFileURL
-    }
-
-    override func endObservingDirectory(at url: URL) {
-        if observedDirectoryURL?.standardizedFileURL == url.standardizedFileURL {
-            observedDirectoryURL = nil
-        }
-    }
-
     // MARK: - Menu action
 
     @objc func newDocumentAction(_ sender: NSMenuItem) {
@@ -290,21 +289,23 @@ class FinderSync: FIFinderSync {
     private func createDocument(_ kind: DocumentKind) {
         guard let targetURL = targetDirectory(for: currentMenuKind) else {
             logger.error("No resolvable target directory for menu action")
-            NSLog("MoreMenuExtension: no target directory for %@", kind.fileExtension)
+            return
+        }
+
+        guard isInsideUserHome(targetURL) else {
+            logger.error("Refusing to create file outside user home: \(targetURL.path, privacy: .public)")
+            NSSound.beep()
             return
         }
 
         logger.log("Creating \(kind.fileExtension, privacy: .public) file in: \(targetURL.path, privacy: .public)")
-        NSLog("MoreMenuExtension: creating %@ in %@", kind.fileExtension, targetURL.path)
 
         do {
             let createdURL = try createFile(in: targetURL, as: kind)
             logger.log("Successfully created: \(createdURL.path, privacy: .public)")
-            NSLog("MoreMenuExtension: created %@", createdURL.path)
             presentCreatedFile(createdURL)
         } catch {
-            logger.error("Failed to create file: \(String(describing: error), privacy: .public)")
-            NSLog("MoreMenuExtension: failed to create file in %@: %@", targetURL.path, String(describing: error))
+            logger.error("Failed to create file in \(targetURL.path, privacy: .public): \(String(describing: error), privacy: .public)")
             NSSound.beep()
         }
     }
@@ -315,9 +316,6 @@ class FinderSync: FIFinderSync {
         if let targetedURL = FIFinderSyncController.default().targetedURL() {
             return normalizedDirectoryURL(from: targetedURL)
         }
-        if menuKind == .contextualMenuForContainer, let observedDirectoryURL {
-            return normalizedDirectoryURL(from: observedDirectoryURL)
-        }
         guard menuKind == .contextualMenuForContainer else { return nil }
         return currentInsertionLocation()
     }
@@ -325,6 +323,12 @@ class FinderSync: FIFinderSync {
     private func normalizedDirectoryURL(from url: URL) -> URL {
         let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey])
         return resourceValues?.isDirectory == true ? url : url.deletingLastPathComponent()
+    }
+
+    private func isInsideUserHome(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        let home = Self.realUserHomePath
+        return path == home || path.hasPrefix(home + "/")
     }
 
     private func currentInsertionLocation() -> URL? {
@@ -351,8 +355,6 @@ class FinderSync: FIFinderSync {
 
     private func createFile(in directoryURL: URL, as kind: DocumentKind) throws -> URL {
         let standardizedDirectoryURL = directoryURL.standardizedFileURL
-        let accessScope = try accessScope(for: standardizedDirectoryURL)
-        defer { accessScope.stopAccessing() }
 
         var candidate = standardizedDirectoryURL.appendingPathComponent("\(kind.baseName).\(kind.fileExtension)")
         var counter = 0
@@ -365,187 +367,6 @@ class FinderSync: FIFinderSync {
 
         try kind.initialContents.write(to: candidate, options: .atomic)
         return candidate
-    }
-
-    // Two-step bookmark flow (Apple dev-forum 66259 workaround):
-    //   1. Host writes a .minimalBookmark into the shared App Group defaults.
-    //   2. Extension resolves that minimal bookmark with .withoutUI — this
-    //      produces a URL that this extension process is authorized to use
-    //      because both targets share the App Group and both carry the
-    //      files.bookmarks.app-scope + files.user-selected.read-write
-    //      entitlements.
-    //   3. Extension mints its own .withSecurityScope bookmark from that URL
-    //      and caches it in its local (non-shared) UserDefaults, keyed by
-    //      the authorized-parent path. On subsequent invocations the
-    //      extension reuses this local scoped bookmark directly — startAccessing
-    //      is only valid on scoped bookmarks created in-process.
-    private func accessScope(for directoryURL: URL) throws -> FolderAccessScope {
-        if isInsideHomeDirectory(directoryURL) {
-            return .none
-        }
-
-        guard let entry = bestAuthorizedFolderEntry(for: directoryURL) else {
-            throw FinderFileError.accessNotGranted(directoryURL.path)
-        }
-
-        if let scope = startLocalScopedAccess(forAuthorizedPath: entry.path) {
-            return scope
-        }
-
-        guard let scope = promoteSharedBookmark(entry) else {
-            throw FinderFileError.accessNotGranted(directoryURL.path)
-        }
-        return scope
-    }
-
-    private func startLocalScopedAccess(forAuthorizedPath authorizedPath: String) -> FolderAccessScope? {
-        guard let bookmarkData = loadLocalScopedBookmark(forAuthorizedPath: authorizedPath) else {
-            return nil
-        }
-
-        do {
-            var isStale = false
-            let scopedURL = try URL(
-                resolvingBookmarkData: bookmarkData,
-                options: [.withSecurityScope, .withoutUI],
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-
-            if isStale {
-                logger.log("Local scoped bookmark stale for \(authorizedPath, privacy: .public); will re-promote from shared minimal bookmark.")
-                removeLocalScopedBookmark(forAuthorizedPath: authorizedPath)
-                return nil
-            }
-
-            guard scopedURL.startAccessingSecurityScopedResource() else {
-                logger.error("startAccessingSecurityScopedResource() returned false for \(authorizedPath, privacy: .public); discarding cached bookmark.")
-                removeLocalScopedBookmark(forAuthorizedPath: authorizedPath)
-                return nil
-            }
-
-            logger.log("Started local security scope for \(authorizedPath, privacy: .public)")
-            return FolderAccessScope {
-                scopedURL.stopAccessingSecurityScopedResource()
-            }
-        } catch {
-            logger.error("Local scoped bookmark resolution failed for \(authorizedPath, privacy: .public): \(String(describing: error), privacy: .public)")
-            removeLocalScopedBookmark(forAuthorizedPath: authorizedPath)
-            return nil
-        }
-    }
-
-    private func promoteSharedBookmark(_ entry: SharedAuthorizedFolderEntry) -> FolderAccessScope? {
-        do {
-            var isStale = false
-            let resolvedURL = try URL(
-                resolvingBookmarkData: entry.bookmarkData,
-                options: [.withoutUI],
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-
-            if isStale {
-                logger.log("Shared minimal bookmark stale for \(entry.path, privacy: .public); host app should refresh it.")
-            }
-
-            let scopedBookmarkData: Data
-            do {
-                scopedBookmarkData = try resolvedURL.bookmarkData(
-                    options: [.withSecurityScope],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-            } catch {
-                logger.error("Minting local scoped bookmark failed for \(entry.path, privacy: .public): \(String(describing: error), privacy: .public)")
-                return nil
-            }
-
-            saveLocalScopedBookmark(scopedBookmarkData, forAuthorizedPath: entry.path)
-            logger.log("Promoted shared minimal bookmark to local scoped bookmark for \(entry.path, privacy: .public)")
-
-            return startLocalScopedAccess(forAuthorizedPath: entry.path)
-        } catch {
-            logger.error("Shared bookmark resolution failed for \(entry.path, privacy: .public): \(String(describing: error), privacy: .public)")
-            return nil
-        }
-    }
-
-    // MARK: - Local (extension-only) scoped bookmark cache
-
-    private var localScopedBookmarkDefaults: UserDefaults { .standard }
-
-    private func localScopedBookmarkKey(forAuthorizedPath authorizedPath: String) -> String {
-        "localScopedBookmark::\(authorizedPath)"
-    }
-
-    private func loadLocalScopedBookmark(forAuthorizedPath authorizedPath: String) -> Data? {
-        localScopedBookmarkDefaults.data(forKey: localScopedBookmarkKey(forAuthorizedPath: authorizedPath))
-    }
-
-    private func saveLocalScopedBookmark(_ data: Data, forAuthorizedPath authorizedPath: String) {
-        localScopedBookmarkDefaults.set(data, forKey: localScopedBookmarkKey(forAuthorizedPath: authorizedPath))
-    }
-
-    private func removeLocalScopedBookmark(forAuthorizedPath authorizedPath: String) {
-        localScopedBookmarkDefaults.removeObject(forKey: localScopedBookmarkKey(forAuthorizedPath: authorizedPath))
-    }
-
-    // In a sandboxed extension FileManager.default.homeDirectoryForCurrentUser
-    // returns the container home (…/Library/Containers/<bundle id>/Data), not
-    // the real user home — so we query the user database directly. This is
-    // what the home-relative-path entitlement is evaluated against, so it is
-    // also the right boundary for our "skip the bookmark dance" fast path.
-    private static let realUserHomePath: String = {
-        if let pw = getpwuid(getuid()),
-           let home = pw.pointee.pw_dir.flatMap({ String(validatingUTF8: $0) }) {
-            return URL(fileURLWithPath: home).standardizedFileURL.path
-        }
-        return NSHomeDirectoryForUser(NSUserName()) ?? NSHomeDirectory()
-    }()
-
-    private func isInsideHomeDirectory(_ url: URL) -> Bool {
-        let homePath = FinderSync.realUserHomePath
-        let targetPath = url.standardizedFileURL.path
-        return targetPath == homePath || targetPath.hasPrefix(homePath + "/")
-    }
-
-    private func bestAuthorizedFolderEntry(for directoryURL: URL) -> SharedAuthorizedFolderEntry? {
-        let targetPath = directoryURL.standardizedFileURL.path
-        let entries = sharedAuthorizedFolderEntries()
-
-        return entries
-            .filter { entry in
-                targetPath == entry.path || targetPath.hasPrefix(entry.path + "/")
-            }
-            .max { lhs, rhs in lhs.path.count < rhs.path.count }
-    }
-
-    private func sharedAuthorizedFolderEntries() -> [SharedAuthorizedFolderEntry] {
-        let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) ?? .standard
-        guard
-            let data = defaults.data(forKey: sharedAuthorizedFolderEntriesKey),
-            let entries = try? JSONDecoder().decode([SharedAuthorizedFolderEntry].self, from: data)
-        else {
-            return []
-        }
-
-        return entries
-    }
-
-    private func refreshMonitoredDirectories() {
-        let controller = FIFinderSyncController.default()
-        let homeDirectoryURL = URL(fileURLWithPath: FinderSync.realUserHomePath).standardizedFileURL
-        let authorizedFolderURLs = sharedAuthorizedFolderEntries().map {
-            URL(fileURLWithPath: $0.path).standardizedFileURL
-        }
-
-        var monitoredURLs: [URL] = [homeDirectoryURL]
-        for url in authorizedFolderURLs where !monitoredURLs.contains(url) {
-            monitoredURLs.append(url)
-        }
-
-        controller.directoryURLs = Set(monitoredURLs)
     }
 
     // MARK: - File presentation
@@ -586,8 +407,4 @@ class FinderSync: FIFinderSync {
         whiteImage.isTemplate = false
         return whiteImage
     }
-}
-
-private enum FinderFileError: Error {
-    case accessNotGranted(String)
 }

@@ -122,7 +122,9 @@ No security-scoped bookmarks, no `startAccessingSecurityScopedResource()`, no ho
 
 Because the release DMG is ad-hoc-signed (`CODE_SIGNING_ALLOWED=NO` + `codesign --sign -` in the build scripts), TCC cannot remember the "Allow" decision across reinstalls. Every fresh install produces a new CDHash, the stored `csreq` in `~/Library/Application Support/com.apple.TCC/TCC.db` fails to match, and TCC re-prompts. This is not an entitlement bug — it is how TCC is designed to behave when no stable certificate chain anchors the requirement.
 
-Silent TCC persistence across reinstalls requires a Developer ID signature. Plan 0004 §12.4 describes the upgrade path.
+For local installs, a paid Developer ID certificate is not required. `scripts/install-local.sh` now prefers the first valid `Apple Development:` code-signing identity in the user's keychain and passes it through `MOREMENU_CODE_SIGN_IDENTITY`. That produces a stable certificate-backed designated requirement for this Mac, so TCC can track the app by signer and bundle identifier instead of only by CDHash. If no Apple Development identity is available, the scripts fall back to ad-hoc signing and the old prompt trade-off remains.
+
+For public distribution to other Macs without Gatekeeper friction, use Developer ID signing and notarization. Plan 0004 §12.4 describes that distribution upgrade path.
 
 ## Monitored Directory Invariant (READ BEFORE TOUCHING `FinderSync.init()`)
 

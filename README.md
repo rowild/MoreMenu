@@ -89,7 +89,9 @@ External drives under `/Volumes/*` are **not** supported in this build. Right-cl
 
 The first time you launch MoreMenu after a fresh install, macOS may show a "MoreMenu.app would like to access…" prompt. Click **Allow** once. macOS remembers the decision.
 
-If you reinstall the app from an updated DMG, the prompt may reappear — this is a side-effect of the current ad-hoc signing used in the GitHub builds. Clicking Allow once more is enough.
+For local installs, `scripts/install-local.sh` uses a free `Apple Development` signing identity when one is available in your keychain. That gives macOS a stable app identity without requiring a paid Developer ID certificate.
+
+If the app is installed from an ad-hoc-signed DMG, the prompt may reappear after an update because macOS can only identify that exact build. Clicking Allow once more is enough.
 
 ## Notes
 

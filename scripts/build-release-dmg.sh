@@ -20,6 +20,7 @@ STAGE_DIR="$ROOT_DIR/.build/dmg-stage"
 VERSION="${VERSION:-$(grep -m1 'MARKETING_VERSION' "$XCODE_PROJECT/project.pbxproj" | sed 's/.*MARKETING_VERSION = //;s/;//;s/[[:space:]]//g')}"
 DMG_NAME="${DMG_NAME:-${PRODUCT_NAME}-v${VERSION}.dmg}"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
+CODE_SIGN_IDENTITY="${MOREMENU_CODE_SIGN_IDENTITY:--}"
 
 if [[ -z "$VERSION" ]]; then
   echo "Could not determine MARKETING_VERSION from project.pbxproj."
@@ -43,12 +44,16 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-echo "==> Applying ad hoc bundle signatures for distributable packaging"
+if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
+  echo "==> Applying ad hoc bundle signatures"
+else
+  echo "==> Applying bundle signatures with identity: $CODE_SIGN_IDENTITY"
+fi
 # Sign extension first (inner bundles must be signed before the container)
-codesign --force --sign - --timestamp=none \
+codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp=none \
   --entitlements "$EXTENSION_ENTITLEMENTS_PATH" \
   "$EXTENSION_PATH"
-codesign --force --sign - --timestamp=none \
+codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp=none \
   --entitlements "$APP_ENTITLEMENTS_PATH" \
   "$APP_PATH"
 

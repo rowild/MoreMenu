@@ -10,6 +10,20 @@ EXTENSION_ID="GMX.MoreMenu.MoreMenuExtension"
 INSTALLED_EXTENSION="$APP_DST/Contents/PlugIns/MoreMenuExtension.appex"
 BUILT_EXTENSION="$APP_SRC/Contents/PlugIns/MoreMenuExtension.appex"
 
+if [[ -z "${MOREMENU_CODE_SIGN_IDENTITY:-}" ]]; then
+  DETECTED_CODE_SIGN_IDENTITY="$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | awk -F '"' '/"Apple Development:/ { print $2; exit }'
+  )"
+  if [[ -n "$DETECTED_CODE_SIGN_IDENTITY" ]]; then
+    export MOREMENU_CODE_SIGN_IDENTITY="$DETECTED_CODE_SIGN_IDENTITY"
+    echo "==> Using stable local signing identity: $MOREMENU_CODE_SIGN_IDENTITY"
+  else
+    export MOREMENU_CODE_SIGN_IDENTITY="-"
+    echo "==> No Apple Development signing identity found; falling back to ad hoc signing"
+  fi
+fi
+
 "$ROOT_DIR/scripts/build-release-dmg.sh"
 
 if [[ ! -d "$APP_SRC" ]]; then
@@ -34,15 +48,19 @@ defaults delete GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
 defaults delete group.GMX.MoreMenu sharedAuthorizedFolderEntries 2>/dev/null || true
 defaults delete group.GMX.MoreMenu authorizedFolderRecords 2>/dev/null || true
 
-# Reset the TCC record that actually fires for MoreMenu on Tahoe 26.4 —
-# SystemPolicyAppData, NOT SystemPolicyAppBundles. The prompt text is shared
-# between these two services, which misled the 1.2.0 installer. Under ad-hoc
-# signing this reset does NOT prevent the prompt (the csreq can't be made
-# stable without a Developer ID), but it stops the stored csreq from getting
-# stale and aligns the TCC row to the current build. See
-# .claude/plans/0004_new_research_on_rightclick_permission.md §11.2 and §12.3.
-tccutil reset SystemPolicyAppData GMX.MoreMenu 2>/dev/null || true
-tccutil reset SystemPolicyAppData GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
+if [[ "$MOREMENU_CODE_SIGN_IDENTITY" == "-" ]]; then
+  # Reset the TCC record that actually fires for MoreMenu on Tahoe 26.4 —
+  # SystemPolicyAppData, NOT SystemPolicyAppBundles. The prompt text is shared
+  # between these two services, which misled the 1.2.0 installer. Under ad-hoc
+  # signing this reset does NOT prevent the prompt (the csreq can't be made
+  # stable without a certificate identity), but it stops the stored csreq from
+  # getting stale and aligns the TCC row to the current build. See
+  # .claude/plans/0004_new_research_on_rightclick_permission.md §11.2 and §12.3.
+  tccutil reset SystemPolicyAppData GMX.MoreMenu 2>/dev/null || true
+  tccutil reset SystemPolicyAppData GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
+else
+  echo "==> Keeping existing TCC permissions for stable local signature"
+fi
 
 echo "==> Removing stale MoreMenuExtension registrations from DerivedData and build temp"
 for stale_root in "$HOME/Library/Developer/Xcode/DerivedData" "/private/tmp/moremenu-build" "$ROOT_DIR/.build"; do

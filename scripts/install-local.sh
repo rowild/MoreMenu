@@ -48,19 +48,12 @@ defaults delete GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
 defaults delete group.GMX.MoreMenu sharedAuthorizedFolderEntries 2>/dev/null || true
 defaults delete group.GMX.MoreMenu authorizedFolderRecords 2>/dev/null || true
 
-if [[ "$MOREMENU_CODE_SIGN_IDENTITY" == "-" ]]; then
-  # Reset the TCC record that actually fires for MoreMenu on Tahoe 26.4 —
-  # SystemPolicyAppData, NOT SystemPolicyAppBundles. The prompt text is shared
-  # between these two services, which misled the 1.2.0 installer. Under ad-hoc
-  # signing this reset does NOT prevent the prompt (the csreq can't be made
-  # stable without a certificate identity), but it stops the stored csreq from
-  # getting stale and aligns the TCC row to the current build. See
-  # .claude/plans/0004_new_research_on_rightclick_permission.md §11.2 and §12.3.
-  tccutil reset SystemPolicyAppData GMX.MoreMenu 2>/dev/null || true
-  tccutil reset SystemPolicyAppData GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
-else
-  echo "==> Keeping existing TCC permissions for stable local signature"
-fi
+# Reset stale AppData rows on every install. The fixed Finder Sync extension no
+# longer registers broad roots that require this service, so keeping an old
+# boot-scoped SystemPolicyAppData decision can only mask whether the fix works.
+echo "==> Resetting stale AppData TCC state"
+tccutil reset SystemPolicyAppData GMX.MoreMenu 2>/dev/null || true
+tccutil reset SystemPolicyAppData GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
 
 echo "==> Removing stale MoreMenuExtension registrations from DerivedData and build temp"
 for stale_root in "$HOME/Library/Developer/Xcode/DerivedData" "/private/tmp/moremenu-build" "$ROOT_DIR/.build"; do

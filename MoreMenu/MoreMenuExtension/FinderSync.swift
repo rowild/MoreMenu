@@ -13,8 +13,13 @@
 //  for App-Store-signed apps like FiScript, but under the project's current
 //  ad-hoc signing it cannot produce a stable TCC code requirement on macOS
 //  Tahoe 26.4 and therefore cannot work silently across reinstalls. The
-//  home-relative scope matches what version 1.1 shipped with and what the
-//  user has consistently accepted ("prompted once after a new install").
+//  home-relative scope matches the user-writable locations this build supports.
+//
+//  The extension intentionally does not register Finder Sync monitoring for the
+//  filesystem root or the real user-home root. On Tahoe, those broad scopes can
+//  be classified as AppData access at login because they cover app containers
+//  under ~/Library. Instead, it monitors visible top-level home subfolders while
+//  excluding ~/Library and ~/Applications.
 //  See .claude/plans/0004_new_research_on_rightclick_permission.md for the
 //  full signing/TCC research.
 //
@@ -223,19 +228,75 @@ class FinderSync: FIFinderSync {
         return NSHomeDirectory()
     }()
 
+    private static let excludedTopLevelHomeDirectoryNames: Set<String> = [
+        "Applications",
+        "Library"
+    ]
+
+    private static let fallbackTopLevelHomeDirectoryNames = [
+        "Desktop",
+        "Documents",
+        "Downloads",
+        "Movies",
+        "Music",
+        "Pictures",
+        "Public"
+    ]
+
     // MARK: - Init
 
     override init() {
         super.init()
-        // Monitor the filesystem root. macOS's Finder Sync framework treats
-        // "/" specially — it means "call me for any local folder Finder shows"
-        // — and does NOT classify this as cross-app data access for App
-        // Management. Registering a user-home path (e.g. "/Users/<user>")
-        // instead causes macOS to treat the extension as observing every
-        // other installed app's Container under ~/Library/Containers and
-        // raises the Sonoma App Management consent prompt whenever another
-        // app is launched. Invariant pinned by FinderSyncInvariantTests.
-        FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/")]
+        // Keep Finder Sync registration away from roots that contain app data.
+        // Registering "/" or the real home root can cover ~/Library/Containers,
+        // which macOS classifies as AppData access and may re-prompt at login.
+        FIFinderSyncController.default().directoryURLs = Self.monitoredDirectoryURLs()
+    }
+
+    private static func monitoredDirectoryURLs() -> Set<URL> {
+        let homeURL = URL(fileURLWithPath: realUserHomePath, isDirectory: true).standardizedFileURL
+        var seenPaths = Set<String>()
+        var monitoredURLs: [URL] = []
+
+        func appendIfAllowed(_ url: URL) {
+            let standardizedURL = url.standardizedFileURL
+            let path = standardizedURL.path
+            guard path != homeURL.path else { return }
+            guard path.hasPrefix(homeURL.path + "/") else { return }
+            guard seenPaths.insert(path).inserted else { return }
+            monitoredURLs.append(standardizedURL)
+        }
+
+        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isPackageKey]
+        if let homeChildren = try? FileManager.default.contentsOfDirectory(
+            at: homeURL,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles]
+        ) {
+            for childURL in homeChildren.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                guard !excludedTopLevelHomeDirectoryNames.contains(childURL.lastPathComponent) else {
+                    continue
+                }
+
+                let resourceValues = try? childURL.resourceValues(forKeys: resourceKeys)
+                guard resourceValues?.isDirectory == true, resourceValues?.isPackage != true else {
+                    continue
+                }
+
+                appendIfAllowed(childURL)
+            }
+        }
+
+        for directoryName in fallbackTopLevelHomeDirectoryNames {
+            var isDirectory: ObjCBool = false
+            let fallbackURL = homeURL.appendingPathComponent(directoryName, isDirectory: true)
+            if FileManager.default.fileExists(atPath: fallbackURL.path, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                appendIfAllowed(fallbackURL)
+            }
+        }
+
+        return Set(monitoredURLs)
     }
 
     // MARK: - FIFinderSync overrides

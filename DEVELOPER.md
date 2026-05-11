@@ -128,17 +128,13 @@ For public distribution to other Macs without Gatekeeper friction, use Developer
 
 ## Monitored Directory Invariant (READ BEFORE TOUCHING `FinderSync.init()`)
 
-`FIFinderSyncController.default().directoryURLs` **must** be set to exactly:
+`FIFinderSyncController.default().directoryURLs` **must not** be set to the filesystem root (`/`) or the real user-home root (`/Users/<user>`).
 
-```swift
-[URL(fileURLWithPath: "/")]
-```
+Registering a user-home path — or any path that transitively covers `~/Library/Containers/` — causes macOS Sonoma (14+) to classify the extension as observing *other apps'* Container data. That triggers the **App Management** consent prompt (`"MoreMenu.app would like to access data from other apps…"`) every time *any* sandboxed app is launched, and also suppresses the right-click menu items until consent is granted.
 
-Registering a user-home path (`/Users/<user>`) — or any path that transitively covers `~/Library/Containers/` — causes macOS Sonoma (14+) to classify the extension as observing *other apps'* Container data. That triggers the **App Management** consent prompt (`"MoreMenu.app would like to access data from other apps…"`) every time *any* sandboxed app is launched, and also suppresses the right-click menu items until consent is granted.
+Release 1.2.1 tried the filesystem-root registration. On this Tahoe install, local TCC state showed `kTCCServiceSystemPolicyAppData` recorded against the live `MoreMenuExtension` process at boot, before any menu action ran. The current registration therefore monitors visible top-level home subfolders and explicitly excludes `~/Library`, `~/Applications`, and package directories.
 
-The filesystem-root `"/"` registration is a Finder Sync special mode that macOS treats as "call me for any local folder Finder shows" and is **not** classified as cross-app data access.
-
-This invariant is pinned by [`MoreMenuTests/FinderSyncInvariantTests.swift`](MoreMenu/MoreMenuTests/FinderSyncInvariantTests.swift). If those tests start failing after a refactor, the correct response is to restore the invariant, not to update the tests.
+This invariant is pinned by [`MoreMenuTests/FinderSyncInvariantTests.swift`](MoreMenu/MoreMenuTests/FinderSyncInvariantTests.swift). If those tests start failing after a refactor, the correct response is to preserve the filtered registration shape unless fresh TCC evidence proves a different scope is safer.
 
 ## Manual QA Protocol Before Each Release
 
@@ -149,9 +145,9 @@ Automated tests cannot fully exercise the sandbox + Finder + App Management inte
    - Open `System Settings → Privacy & Security → Extensions → Finder Extensions` and confirm `MoreMenu` is enabled
 
 2. **Menu appears on every Finder surface inside the home folder**
-   - Right-click on empty space inside a Finder window showing `~/Desktop` or any subfolder of `~/` → menu items present
+   - Right-click on empty space inside a Finder window showing `~/Desktop`, `~/Documents`, `~/Downloads`, or any monitored top-level home subfolder → menu items present
    - Right-click on the Desktop → menu items present
-   - Right-click on a selected file or folder inside `~/` → menu items present
+   - Right-click on a selected file or folder inside a monitored top-level home subfolder → menu items present
 
 3. **File creation works inside the home folder**
    - Create a `.txt`, `.md`, and `.rtf` file from each of the three surfaces above
@@ -164,7 +160,7 @@ Automated tests cannot fully exercise the sandbox + Finder + App Management inte
      - `/Volumes/<any drive>`
      - `/Users/<other user>/*` (if another account exists)
      - `/tmp`
-   - Right-click inside `~/Library/Containers/*` should still show items (this is under the home entitlement, even if it's a weird place to create files).
+   - Right-click inside `~/Library/Containers/*` should not show items; Finder Sync must not monitor app container data.
    - No crash, no beachball, no silent file creation attempts anywhere outside the home.
 
 5. **App Management regression guard (release 1.1.5 → 1.1.6 fix)**
@@ -173,13 +169,12 @@ Automated tests cannot fully exercise the sandbox + Finder + App Management inte
    - **There must be NO "MoreMenu.app would like to access data from other apps" prompt on `TextEdit` launch.** If that prompt appears, `directoryURLs` is wrong — see "Monitored Directory Invariant" above.
    - Repeat for `Markdown` editors, `Preview`, and any other app you can think of. None of them should trigger the prompt.
 
-6. **First-install TCC prompt (ad-hoc signing trade-off, 1.2.1)**
-   - `./scripts/install-local.sh` (which runs `tccutil reset SystemPolicyAppData` for both bundle IDs)
+6. **AppData TCC regression guard**
+   - `./scripts/install-local.sh` (which resets stale `SystemPolicyAppData` state for both bundle IDs)
    - Quit `MoreMenu.app` if running
    - Launch `MoreMenu.app` from `~/Applications`
-   - A single "MoreMenu.app would like to access data from other apps" prompt on launch is **expected** under ad-hoc signing. Click Allow.
-   - After clicking Allow, the prompt must not re-fire during normal use of the same build. If it does re-fire *repeatedly during the same session*, capture `log stream --predicate 'subsystem == "com.apple.TCC"' --style compact` and consult [0004_new_research_on_rightclick_permission.md](.claude/plans/0004_new_research_on_rightclick_permission.md) §11–§12.
-   - The prompt recurring on *each new install* is the accepted trade-off, not a regression.
+   - There must be no "MoreMenu.app would like to access data from other apps" prompt on launch or after a restart.
+   - If the prompt appears, capture `log stream --predicate 'subsystem == "com.apple.TCC"' --style compact` and inspect `~/Library/Application Support/com.apple.TCC/TCC.db` for a fresh `kTCCServiceSystemPolicyAppData` row.
 
 If any of the above fails, DO NOT release. Capture `log stream --predicate 'subsystem == "GMX.MoreMenu.MoreMenuExtension"'` output and investigate.
 
@@ -204,7 +199,7 @@ If any of the above fails, DO NOT release. Capture `log stream --predicate 'subs
 
 ### The menu appears but no file is created
 
-- Writes should succeed anywhere under `/` (outside SIP-protected paths) via the `temporary-exception.files.absolute-path.read-write` entitlement.
+- Writes should succeed inside the user's home via the `temporary-exception.files.home-relative-path.read-write` entitlement. MoreMenu menu items should be hidden outside monitored, writable home subfolders.
 - Watch live extension logs:
   ```bash
   /usr/bin/log stream --style compact \
@@ -212,7 +207,7 @@ If any of the above fails, DO NOT release. Capture `log stream --predicate 'subs
   ```
 - Common log signatures:
   - `Creating <ext> file in: <path>` followed by `Successfully created: ...` → write succeeded
-  - `Failed to create file in <path>: ...` → sandbox denied the write. Confirm the extension really was rebuilt with `temporary-exception.files.absolute-path.read-write`:
+  - `Failed to create file in <path>: ...` → sandbox denied the write. Confirm the extension really was rebuilt with `temporary-exception.files.home-relative-path.read-write`:
     ```bash
     codesign -d --entitlements - "$HOME/Applications/MoreMenu.app/Contents/PlugIns/MoreMenuExtension.appex"
     ```

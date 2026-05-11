@@ -13,12 +13,14 @@
 //  that caused macOS to prompt the user every time TextEdit was launched, AND
 //  suppressed the right-click menu items until consent was granted.
 //
-//  The fix was to register `FIFinderSyncController.default().directoryURLs =
-//  [URL(fileURLWithPath: "/")]`. The filesystem-root registration is a special
-//  mode that macOS does NOT classify as cross-app data access.
+//  Release 1.2.1 registered the filesystem root, but Tahoe still recorded a
+//  boot-time `SystemPolicyAppData` access for the Finder Sync process. The
+//  current fix is to monitor visible top-level home folders while excluding
+//  roots that contain app data, especially ~/Library and ~/Applications.
 //
-//  These tests pin that literal in source so a future refactor cannot silently
-//  re-introduce the regression without the CI build failing.
+//  These tests pin the source-level shape of that registration so a future
+//  refactor cannot silently re-introduce the regression without the CI build
+//  failing.
 //
 
 import Testing
@@ -38,28 +40,42 @@ struct FinderSyncInvariantTests {
         return (try? String(contentsOf: finderSyncURL, encoding: .utf8)) ?? ""
     }
 
-    @Test("FinderSync registers ONLY the filesystem root for monitoring")
-    func directoryURLsIsFilesystemRoot() {
+    @Test("FinderSync does not register filesystem or home roots")
+    func directoryURLsAvoidsBroadRoots() {
         let source = Self.finderSyncSource
         #expect(!source.isEmpty, "Could not locate FinderSync.swift source")
 
-        // The invariant literal. Changing this without updating the test is a
-        // deliberate signal to stop and re-read the comment above.
-        let expected = #"FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/")]"#
+        let forbiddenRootLiteral = #"FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/")]"#
         #expect(
-            source.contains(expected),
-            "FinderSync.init() must register [URL(fileURLWithPath: \"/\")] as its monitored directories. Any other value (e.g. user home) triggers the Sonoma App Management prompt when other apps are launched."
+            !source.contains(forbiddenRootLiteral),
+            "FinderSync must not register the filesystem root; Tahoe records boot-time AppData access for that scope."
+        )
+
+        #expect(
+            source.contains("Self.monitoredDirectoryURLs()"),
+            "FinderSync.init() should use the filtered monitored-directory list instead of a broad root."
         )
     }
 
-    @Test("FinderSync does NOT re-assign directoryURLs per menu invocation")
+    @Test("FinderSync excludes app-data roots from monitoring")
+    func directoryURLsExcludesAppDataRoots() {
+        let source = Self.finderSyncSource
+        #expect(!source.isEmpty)
+
+        #expect(source.contains(#""Library""#))
+        #expect(source.contains(#""Applications""#))
+        #expect(source.contains("excludedTopLevelHomeDirectoryNames"))
+        #expect(source.contains("resourceValues?.isPackage != true"))
+    }
+
+    @Test("FinderSync assigns directoryURLs only in init")
     func directoryURLsIsNotReassignedDynamically() {
         let source = Self.finderSyncSource
         #expect(!source.isEmpty)
 
-        // Count total assignments to directoryURLs. We allow exactly one — the
-        // init() call. Dynamic reassignment based on user-home or authorized
-        // folders is what tripped the App Management gate in 1.1.5.
+        // Count total assignments to directoryURLs. We allow exactly one in
+        // init(). Dynamic reassignment based on user-home or authorized folders
+        // is what tripped the App Management gate in 1.1.5.
         let assignments = source.components(separatedBy: ".directoryURLs = ").count - 1
         #expect(
             assignments == 1,

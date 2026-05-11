@@ -81,17 +81,17 @@ After that, right-click in Finder and choose the file type you want.
 
 ## Scope
 
-MoreMenu creates files anywhere inside your Home folder — `~/Desktop`, `~/Documents`, `~/Downloads`, and any subfolder of those. That's the supported scope for this build.
+MoreMenu creates files inside visible top-level folders in your Home folder — for example `~/Desktop`, `~/Documents`, `~/Downloads`, and their subfolders. It intentionally does not monitor `~/Library` or `~/Applications`, because those locations can make macOS classify the Finder extension as accessing other apps' data at login.
 
-External drives under `/Volumes/*` are **not** supported in this build. Right-clicking there will show the menu but creating a file will fail silently. Supporting `/Volumes/*` cleanly on macOS Tahoe requires a signed Developer ID build; see [DEVELOPER.md](DEVELOPER.md) if you're interested in the technical reason.
+External drives under `/Volumes/*` are **not** supported in this build. MoreMenu items should be hidden there. Supporting `/Volumes/*` cleanly on macOS Tahoe requires a signed Developer ID build; see [DEVELOPER.md](DEVELOPER.md) if you're interested in the technical reason.
 
 ## First-Install Prompt
 
-The first time you launch MoreMenu after a fresh install, macOS may show a "MoreMenu.app would like to access…" prompt. Click **Allow** once. macOS remembers the decision.
+The current local build avoids the AppData prompt by keeping the Finder Sync monitored scope away from app-data roots. If macOS shows a "MoreMenu.app would like to access data from other apps" prompt after install or restart, that is a bug.
 
 For local installs, `scripts/install-local.sh` uses a free `Apple Development` signing identity when one is available in your keychain. That gives macOS a stable app identity without requiring a paid Developer ID certificate.
 
-If the app is installed from an ad-hoc-signed DMG, the prompt may reappear after an update because macOS can only identify that exact build. Clicking Allow once more is enough.
+If the app is installed from an older ad-hoc-signed DMG, unrelated one-time privacy prompts may still appear after an update because macOS can only identify that exact build.
 
 ## Notes
 

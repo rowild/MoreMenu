@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Stopped registering the Finder Sync extension for the filesystem root.** On Tahoe, local TCC state showed `kTCCServiceSystemPolicyAppData` recorded against the live `MoreMenuExtension` process at boot when `directoryURLs` was set to `/`. The extension now registers visible top-level home subfolders instead, while excluding `~/Library`, `~/Applications`, and package directories so it does not cover app container data.
+- `install-local.sh` now resets stale `SystemPolicyAppData` rows on every install. The fixed extension should not need that TCC service, so preserving an old boot-scoped row can only hide whether the registration fix worked.
+
+### Changed
+
+- `FinderSyncInvariantTests` now guard against broad root registration and require the filtered monitored-directory path.
+- Developer docs and README now describe the narrower monitored scope: writable home subfolders are supported, app-data roots and external volumes are not.
+
 ## 1.2.1 - 2026-04-18
 
 ### Changed

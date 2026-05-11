@@ -251,7 +251,7 @@ Every guess costs the user:
    - Host app (settings UI)
    - Finder Sync Extension
 2. `FinderSync.swift`:
-   - Registers `FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/")]` once in `init()` and never touches it again. Pinned by `FinderSyncInvariantTests`.
+   - Registers filtered visible top-level home subfolders once in `init()` and never touches `directoryURLs` again. It intentionally avoids `/`, the real home root, `~/Library`, `~/Applications`, and package directories. Pinned by `FinderSyncInvariantTests`.
    - Reads enabled file types from shared defaults in the App Group
    - Adds menu items only for the enabled file types
    - Creates `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
@@ -265,7 +265,7 @@ Every guess costs the user:
    - `./scripts/install-local.sh`
    - installs to `~/Applications`
    - registers the embedded Finder extension
-   - purges legacy `authorizedFolderRecords` / `sharedAuthorizedFolderEntries` state and resets `SystemPolicyAppData` TCC for both bundle IDs
+   - purges legacy `authorizedFolderRecords` / `sharedAuthorizedFolderEntries` state and resets stale `SystemPolicyAppData` TCC for both bundle IDs
    - restarts Finder
 5. Shared settings:
    - App Group identifier: `group.GMX.MoreMenu`
@@ -286,13 +286,14 @@ Finder Sync extension:
 
 ### Scope: home-only, not filesystem-wide
 
-External drives under `/Volumes/*` are intentionally unsupported in this build. FiScript ships `temporary-exception.files.absolute-path.read-write = /` on the App Store for wider scope, but that entitlement only works silently under a stable code signature (Developer ID or App Store). This project currently uses ad-hoc signing (`CODE_SIGNING_ALLOWED=NO` + post-build `codesign --sign -`), which cannot produce a stable TCC `csreq` on macOS Tahoe 26.4. Narrowing the entitlement scope matches what the build can actually deliver.
+External drives under `/Volumes/*` are intentionally unsupported in this build. FiScript ships `temporary-exception.files.absolute-path.read-write = /` on the App Store for wider scope, but that entitlement only works silently under a stable code signature (Developer ID or App Store). This project currently prefers Apple Development signing for local installs and falls back to ad-hoc signing (`CODE_SIGNING_ALLOWED=NO` + post-build `codesign --sign -`) only when no identity is available. Narrowing the entitlement and monitored Finder Sync scopes matches what the local build can actually deliver without recurring AppData prompts.
 
 ### Historical notes
 
 - **1.1.5–1.1.7**: implemented external-drive access using security-scoped bookmarks handed from host to extension through an App Group. Deleted entirely in 1.2.0.
 - **1.2.0**: first attempted `absolute-path = /` entitlement to match FiScript. Shipped but still exhibited the TCC prompt on every reinstall and missing menu items on `/Volumes/*`. Post-install investigation showed the root cause was ad-hoc signing, not the entitlement set.
 - **1.2.1**: narrowed to `home-relative-path = /`, corrected the TCC reset service in `install-local.sh` (`SystemPolicyAppData`, not `SystemPolicyAppBundles`), documented the signing-level limitation.
+- **Unreleased**: stopped monitoring `/` with Finder Sync after TCC showed `SystemPolicyAppData` attached to the boot-time extension process. MoreMenu now monitors filtered home subfolders and clears stale AppData TCC state during local install.
 
 Full research and reasoning: [.claude/plans/0004_new_research_on_rightclick_permission.md](.claude/plans/0004_new_research_on_rightclick_permission.md) §0, §11, §12.
 

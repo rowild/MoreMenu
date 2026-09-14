@@ -66,6 +66,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A01234567890ABCDEF000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		BB9366B82F8561A500294518 /* MoreMenu */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MoreMenu;
@@ -126,6 +131,7 @@
 		BB9366AD2F8561A500294518 = {
 			isa = PBXGroup;
 			children = (
+				A01234567890ABCDEF000001 /* Shared */,
 				BB9366B82F8561A500294518 /* MoreMenu */,
 				BB9366CC2F8561A600294518 /* MoreMenuTests */,
 				BB9366D62F8561A600294518 /* MoreMenuUITests */,
@@ -163,6 +169,7 @@
 				BB9366F12F85645900294518 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				A01234567890ABCDEF000001 /* Shared */,
 				BB9366B82F8561A500294518 /* MoreMenu */,
 			);
 			name = MoreMenu;
@@ -186,6 +193,7 @@
 				BB9366CB2F8561A600294518 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				A01234567890ABCDEF000001 /* Shared */,
 				BB9366CC2F8561A600294518 /* MoreMenuTests */,
 			);
 			name = MoreMenuTests;
@@ -231,6 +239,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				A01234567890ABCDEF000001 /* Shared */,
 				BB9366EB2F85645900294518 /* MoreMenuExtension */,
 			);
 			name = MoreMenuExtension;
@@ -546,7 +555,6 @@
 		BB9366E12F8561A600294518 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QN24ZH7M6W;
@@ -557,14 +565,12 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MoreMenu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MoreMenu";
 			};
 			name = Debug;
 		};
 		BB9366E22F8561A600294518 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QN24ZH7M6W;
@@ -575,7 +581,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MoreMenu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MoreMenu";
 			};
 			name = Release;
 		};

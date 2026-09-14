@@ -6,3 +6,4 @@ build/
 .build/
 dist/
 .claude/
+__pycache__/

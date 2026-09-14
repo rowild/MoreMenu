@@ -1,87 +1,66 @@
 #!/bin/zsh
-
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="MoreMenu.app"
-APP_SRC="$ROOT_DIR/.build/release-derived-data/Build/Products/Release/$APP_NAME"
-APP_DST="$HOME/Applications/$APP_NAME"
+export CONFIGURATION="${CONFIGURATION:-Release}"
+export DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$ROOT_DIR/.build/release-derived-data}"
+APP_SRC="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/MoreMenu.app"
+INSTALL_DIR="${MOREMENU_INSTALL_DIR:-$HOME/Applications}"
+APP_DST="$INSTALL_DIR/MoreMenu.app"
 EXTENSION_ID="GMX.MoreMenu.MoreMenuExtension"
-INSTALLED_EXTENSION="$APP_DST/Contents/PlugIns/MoreMenuExtension.appex"
-BUILT_EXTENSION="$APP_SRC/Contents/PlugIns/MoreMenuExtension.appex"
+LEGACY_PREFERENCES="${MOREMENU_LEGACY_PREFERENCES:-$HOME/Library/Group Containers/group.GMX.MoreMenu/Library/Preferences/group.GMX.MoreMenu.plist}"
 
-if [[ -z "${MOREMENU_CODE_SIGN_IDENTITY:-}" ]]; then
-  DETECTED_CODE_SIGN_IDENTITY="$(
-    security find-identity -v -p codesigning 2>/dev/null \
-      | awk -F '"' '/"Apple Development:/ { print $2; exit }'
-  )"
-  if [[ -n "$DETECTED_CODE_SIGN_IDENTITY" ]]; then
-    export MOREMENU_CODE_SIGN_IDENTITY="$DETECTED_CODE_SIGN_IDENTITY"
-    echo "==> Using stable local signing identity: $MOREMENU_CODE_SIGN_IDENTITY"
-  else
-    export MOREMENU_CODE_SIGN_IDENTITY="-"
-    echo "==> No Apple Development signing identity found; falling back to ad hoc signing"
+"$ROOT_DIR/scripts/build-app.sh"
+mkdir -p "$INSTALL_DIR"
+INSTALL_STAGE="$(mktemp -d "$INSTALL_DIR/.moremenu-install.XXXXXX")"
+HAD_PREVIOUS=0
+REPLACED=0
+COMPLETE=0
+cleanup() {
+  local result=$?
+  if [[ "$COMPLETE" == 0 && "$REPLACED" == 1 ]]; then
+    echo "Installation failed; restoring the previous app." >&2
+    rm -rf "$APP_DST"
+    if [[ "$HAD_PREVIOUS" == 1 ]]; then
+      mv "$INSTALL_STAGE/previous.app" "$APP_DST"
+      pluginkit -a "$APP_DST/Contents/PlugIns/MoreMenuExtension.appex" || true
+    fi
   fi
-fi
+  rm -rf "$INSTALL_STAGE"
+  return "$result"
+}
+trap cleanup EXIT
 
-"$ROOT_DIR/scripts/build-release-dmg.sh"
-
-if [[ ! -d "$APP_SRC" ]]; then
-  echo "Built app was not found at:"
-  echo "  $APP_SRC"
-  exit 1
-fi
-
-echo "==> Installing $APP_NAME to $HOME/Applications"
+ditto "$APP_SRC" "$INSTALL_STAGE/MoreMenu.app"
+python3 "$ROOT_DIR/scripts/verify-signing.py" "$INSTALL_STAGE/MoreMenu.app"
+# Export before replacing anything. Invalid legacy data aborts without deleting it.
+LEGACY_JSON="$(python3 "$ROOT_DIR/scripts/export-legacy-settings.py" "$LEGACY_PREFERENCES")"
 killall MoreMenu 2>/dev/null || true
 killall MoreMenuExtension 2>/dev/null || true
-mkdir -p "$HOME/Applications"
-rm -rf "$APP_DST"
-cp -R "$APP_SRC" "$APP_DST"
+if [[ -e "$APP_DST" ]]; then
+  mv "$APP_DST" "$INSTALL_STAGE/previous.app"
+  HAD_PREVIOUS=1
+fi
+REPLACED=1
+mv "$INSTALL_STAGE/MoreMenu.app" "$APP_DST"
+"$APP_DST/Contents/MacOS/MoreMenu" --import-legacy-settings "$LEGACY_JSON"
 
-# 1.2.0 migration: clean up state from the 1.1.5-1.1.7 bookmark architecture.
-# The extension cached local scoped bookmarks in its private UserDefaults and
-# the App Group held authorizedFolderRecords + sharedAuthorizedFolderEntries.
-# None of that is used anymore; leaving it in place can only confuse things.
-echo "==> Cleaning up legacy authorized-folder state"
-defaults delete GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
-defaults delete group.GMX.MoreMenu sharedAuthorizedFolderEntries 2>/dev/null || true
-defaults delete group.GMX.MoreMenu authorizedFolderRecords 2>/dev/null || true
-
-# Reset stale AppData rows on every install. The fixed Finder Sync extension no
-# longer registers broad roots that require this service, so keeping an old
-# boot-scoped SystemPolicyAppData decision can only mask whether the fix works.
-echo "==> Resetting stale AppData TCC state"
-tccutil reset SystemPolicyAppData GMX.MoreMenu 2>/dev/null || true
-tccutil reset SystemPolicyAppData GMX.MoreMenu.MoreMenuExtension 2>/dev/null || true
-
-echo "==> Removing stale MoreMenuExtension registrations from DerivedData and build temp"
+# Unregister only this app's old development copies; leave their files intact.
 for stale_root in "$HOME/Library/Developer/Xcode/DerivedData" "/private/tmp/moremenu-build" "$ROOT_DIR/.build"; do
   if [[ -d "$stale_root" ]]; then
-    find "$stale_root" \
-      -path "*$APP_NAME/Contents/PlugIns/MoreMenuExtension.appex" \
-      -type d \
-      -print | while IFS= read -r stale_extension; do
+    find "$stale_root" -path '*MoreMenu.app/Contents/PlugIns/MoreMenuExtension.appex' -type d -print |
+      while IFS= read -r stale_extension; do
         pluginkit -r "$stale_extension" || true
       done
   fi
 done
-
-pluginkit -r "$BUILT_EXTENSION" 2>/dev/null || true
-sleep 1
-
-echo "==> Registering installed Finder extension"
-pluginkit -a "$INSTALLED_EXTENSION"
+pluginkit -r "$APP_SRC/Contents/PlugIns/MoreMenuExtension.appex" 2>/dev/null || true
+if [[ "$HAD_PREVIOUS" == 1 ]]; then
+  pluginkit -r "$INSTALL_STAGE/previous.app/Contents/PlugIns/MoreMenuExtension.appex" 2>/dev/null || true
+fi
+pluginkit -a "$APP_DST/Contents/PlugIns/MoreMenuExtension.appex"
 pluginkit -e use -i "$EXTENSION_ID"
-sleep 1
-
-echo "==> Restarting Finder"
-killall Finder
-sleep 1
-
-echo
-echo "Installed:"
-echo "  $APP_DST"
-echo
-echo "Registered extension:"
+COMPLETE=1
+killall Finder 2>/dev/null || true
+printf 'Installed: %s\n' "$APP_DST"
 pluginkit -mAvvv -i "$EXTENSION_ID"

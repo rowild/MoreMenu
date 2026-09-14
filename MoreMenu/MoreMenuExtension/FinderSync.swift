@@ -4,299 +4,23 @@
 //
 //  Created by Robert Wildling on 2026-04-07.
 //
-//  Access model (1.2.1+):
-//  The extension's entitlements grant
-//  `com.apple.security.temporary-exception.files.home-relative-path.read-write = /`,
-//  which gives the sandbox the capability to write anywhere under the user's
-//  home folder. Locations outside the home (notably `/Volumes/*` external
-//  drives) are intentionally not supported: adding `absolute-path = /` works
-//  for App-Store-signed apps like FiScript, but under the project's current
-//  ad-hoc signing it cannot produce a stable TCC code requirement on macOS
-//  Tahoe 26.4 and therefore cannot work silently across reinstalls. The
-//  home-relative scope matches the user-writable locations this build supports.
-//
-//  The extension intentionally does not register Finder Sync monitoring for the
-//  filesystem root or the real user-home root. On Tahoe, those broad scopes can
-//  be classified as AppData access at login because they cover app containers
-//  under ~/Library. Instead, it monitors visible top-level home subfolders while
-//  excluding ~/Library and ~/Applications.
-//  See .claude/plans/0004_new_research_on_rightclick_permission.md for the
-//  full signing/TCC research.
-//
+//  File creation is limited to the user home by the extension sandbox entitlement.
+//  Shared preferences use a Team-ID-prefixed App Group authorized by the signer.
+//  See DEVELOPER.md for the separate monitoring, sandbox, and TCC constraints.
 
 import Cocoa
 import FinderSync
 import OSLog
 
-private let sharedDefaultsSuiteName = "group.GMX.MoreMenu"
-private let finderMenuEnabledKey = "finderMenuEnabled"
-private let enabledDocumentKeysKey = "enabledDocumentKeys"
-
 class FinderSync: FIFinderSync {
-
-    // MARK: - Document types
-
-    private enum DocumentKind: String, CaseIterable {
-        case plainText
-        case markdown
-        case richText
-        case json
-        case yaml
-        case toml
-        case xml
-        case csv
-        case log
-        case html
-        case css
-        case scss
-        case javascript
-        case jsx
-        case typescript
-        case tsx
-        case vue
-        case shellScript
-        case python
-
-        var menuTitle: String {
-            switch self {
-            case .plainText:
-                return "New Textfile"
-            case .markdown:
-                return "New Markdown File"
-            case .richText:
-                return "New Rich Text File"
-            case .json:
-                return "New JSON File"
-            case .yaml:
-                return "New YAML File"
-            case .toml:
-                return "New TOML File"
-            case .xml:
-                return "New XML File"
-            case .csv:
-                return "New CSV File"
-            case .log:
-                return "New Log File"
-            case .html:
-                return "New HTML File"
-            case .css:
-                return "New CSS File"
-            case .scss:
-                return "New SCSS File"
-            case .javascript:
-                return "New JavaScript File"
-            case .jsx:
-                return "New JSX File"
-            case .typescript:
-                return "New TypeScript File"
-            case .tsx:
-                return "New TSX File"
-            case .vue:
-                return "New Vue Component"
-            case .shellScript:
-                return "New Shell Script"
-            case .python:
-                return "New Python File"
-            }
-        }
-
-        var symbolName: String {
-            switch self {
-            case .plainText:
-                return "doc.plaintext"
-            case .markdown:
-                return "doc.text"
-            case .richText:
-                return "doc.richtext"
-            default:
-                return "doc.text"
-            }
-        }
-
-        var defaultEnabled: Bool {
-            switch self {
-            case .plainText, .markdown, .richText:
-                return true
-            default:
-                return false
-            }
-        }
-
-        var baseName: String { "untitled" }
-
-        var fileExtension: String {
-            switch self {
-            case .plainText:
-                return "txt"
-            case .markdown:
-                return "md"
-            case .richText:
-                return "rtf"
-            case .json:
-                return "json"
-            case .yaml:
-                return "yml"
-            case .toml:
-                return "toml"
-            case .xml:
-                return "xml"
-            case .csv:
-                return "csv"
-            case .log:
-                return "log"
-            case .html:
-                return "html"
-            case .css:
-                return "css"
-            case .scss:
-                return "scss"
-            case .javascript:
-                return "js"
-            case .jsx:
-                return "jsx"
-            case .typescript:
-                return "ts"
-            case .tsx:
-                return "tsx"
-            case .vue:
-                return "vue"
-            case .shellScript:
-                return "sh"
-            case .python:
-                return "py"
-            }
-        }
-
-        var initialContents: Data {
-            switch self {
-            case .plainText,
-                    .markdown,
-                    .json,
-                    .yaml,
-                    .toml,
-                    .xml,
-                    .csv,
-                    .log,
-                    .html,
-                    .css,
-                    .scss,
-                    .javascript,
-                    .jsx,
-                    .typescript,
-                    .tsx,
-                    .vue,
-                    .shellScript,
-                    .python:
-                return Data()
-            case .richText:
-                let rtf = #"{\rtf1\ansi\deff0 {\fonttbl {\f0 Helvetica;}}\f0\fs24 }"#
-                return Data(rtf.utf8)
-            }
-        }
-
-        static func enabledKinds(using defaults: UserDefaults) -> [DocumentKind] {
-            let isMenuEnabled = defaults.object(forKey: finderMenuEnabledKey) == nil
-                ? true
-                : defaults.bool(forKey: finderMenuEnabledKey)
-
-            guard isMenuEnabled else { return [] }
-
-            if let storedKeys = defaults.stringArray(forKey: enabledDocumentKeysKey) {
-                let enabledKeys = Set(storedKeys)
-                return allCases.filter { enabledKeys.contains($0.rawValue) }
-            }
-
-            return allCases.filter(\.defaultEnabled)
-        }
-    }
-
-    // MARK: - Properties
-
     private let logger = Logger(subsystem: "GMX.MoreMenu.MoreMenuExtension", category: "FinderSync")
+    private let scope = HomeDirectoryScope.current
+    private let fileCreator = DocumentFileCreator()
     private var currentMenuKind: FIMenuKind = .contextualMenuForContainer
-
-    /// Real user home directory. Inside a sandboxed extension
-    /// `FileManager.default.homeDirectoryForCurrentUser` returns the
-    /// container's home (`…/Library/Containers/<bundle id>/Data`), which
-    /// would make the home-scope check reject every real user folder.
-    /// `getpwuid(getuid())` returns the actual login home regardless of
-    /// sandbox, which is what the `home-relative-path` entitlement covers.
-    private static let realUserHomePath: String = {
-        if let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir {
-            return String(cString: home)
-        }
-        return NSHomeDirectory()
-    }()
-
-    private static let excludedTopLevelHomeDirectoryNames: Set<String> = [
-        "Applications",
-        "Library"
-    ]
-
-    private static let fallbackTopLevelHomeDirectoryNames = [
-        "Desktop",
-        "Documents",
-        "Downloads",
-        "Movies",
-        "Music",
-        "Pictures",
-        "Public"
-    ]
-
-    // MARK: - Init
 
     override init() {
         super.init()
-        // Keep Finder Sync registration away from roots that contain app data.
-        // Registering "/" or the real home root can cover ~/Library/Containers,
-        // which macOS classifies as AppData access and may re-prompt at login.
-        FIFinderSyncController.default().directoryURLs = Self.monitoredDirectoryURLs()
-    }
-
-    private static func monitoredDirectoryURLs() -> Set<URL> {
-        let homeURL = URL(fileURLWithPath: realUserHomePath, isDirectory: true).standardizedFileURL
-        var seenPaths = Set<String>()
-        var monitoredURLs: [URL] = []
-
-        func appendIfAllowed(_ url: URL) {
-            let standardizedURL = url.standardizedFileURL
-            let path = standardizedURL.path
-            guard path != homeURL.path else { return }
-            guard path.hasPrefix(homeURL.path + "/") else { return }
-            guard seenPaths.insert(path).inserted else { return }
-            monitoredURLs.append(standardizedURL)
-        }
-
-        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isPackageKey]
-        if let homeChildren = try? FileManager.default.contentsOfDirectory(
-            at: homeURL,
-            includingPropertiesForKeys: Array(resourceKeys),
-            options: [.skipsHiddenFiles]
-        ) {
-            for childURL in homeChildren.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                guard !excludedTopLevelHomeDirectoryNames.contains(childURL.lastPathComponent) else {
-                    continue
-                }
-
-                let resourceValues = try? childURL.resourceValues(forKeys: resourceKeys)
-                guard resourceValues?.isDirectory == true, resourceValues?.isPackage != true else {
-                    continue
-                }
-
-                appendIfAllowed(childURL)
-            }
-        }
-
-        for directoryName in fallbackTopLevelHomeDirectoryNames {
-            var isDirectory: ObjCBool = false
-            let fallbackURL = homeURL.appendingPathComponent(directoryName, isDirectory: true)
-            if FileManager.default.fileExists(atPath: fallbackURL.path, isDirectory: &isDirectory),
-               isDirectory.boolValue {
-                appendIfAllowed(fallbackURL)
-            }
-        }
-
-        return Set(monitoredURLs)
+        FIFinderSyncController.default().directoryURLs = scope.monitoredDirectoryURLs()
     }
 
     // MARK: - FIFinderSync overrides
@@ -307,7 +31,7 @@ class FinderSync: FIFinderSync {
         }
 
         let menu = NSMenu(title: "")
-        let enabledKinds = activeDocumentKinds()
+        let enabledKinds = MenuPreferences.shared.activeKinds
 
         guard let target = targetDirectory(for: menuKind), !enabledKinds.isEmpty else {
             return menu
@@ -317,7 +41,7 @@ class FinderSync: FIFinderSync {
         // filesystem root `/`, `/Volumes/*`, other users' homes, `/tmp`,
         // `/Applications`, etc. The user gets no false affordance for file
         // creation that would silently fail.
-        guard isInsideUserHome(target) else {
+        guard scope.contains(target) else {
             return menu
         }
 
@@ -350,10 +74,11 @@ class FinderSync: FIFinderSync {
     private func createDocument(_ kind: DocumentKind) {
         guard let targetURL = targetDirectory(for: currentMenuKind) else {
             logger.error("No resolvable target directory for menu action")
+            showCreationError("MoreMenu could not determine the destination folder. Open the folder in Finder and try again.")
             return
         }
 
-        guard isInsideUserHome(targetURL) else {
+        guard scope.contains(targetURL) else {
             logger.error("Refusing to create file outside user home: \(targetURL.path, privacy: .public)")
             NSSound.beep()
             return
@@ -362,34 +87,38 @@ class FinderSync: FIFinderSync {
         logger.log("Creating \(kind.fileExtension, privacy: .public) file in: \(targetURL.path, privacy: .public)")
 
         do {
-            let createdURL = try createFile(in: targetURL, as: kind)
+            let createdURL = try fileCreator.create(in: targetURL, as: kind)
             logger.log("Successfully created: \(createdURL.path, privacy: .public)")
             presentCreatedFile(createdURL)
         } catch {
             logger.error("Failed to create file in \(targetURL.path, privacy: .public): \(String(describing: error), privacy: .public)")
-            NSSound.beep()
+            showCreationError("Could not create a file in \(targetURL.lastPathComponent). \(error.localizedDescription)")
         }
+    }
+
+    private func showCreationError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "File could not be created"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     // MARK: - Target directory resolution
 
     private func targetDirectory(for menuKind: FIMenuKind) -> URL? {
         if let targetedURL = FIFinderSyncController.default().targetedURL() {
-            return normalizedDirectoryURL(from: targetedURL)
+            do {
+                return try TargetDirectoryResolver.directory(for: targetedURL)
+            } catch {
+                logger.error("Could not resolve target directory: \(error.localizedDescription, privacy: .public)")
+                return nil
+            }
         }
         guard menuKind == .contextualMenuForContainer else { return nil }
         return currentInsertionLocation()
-    }
-
-    private func normalizedDirectoryURL(from url: URL) -> URL {
-        let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey])
-        return resourceValues?.isDirectory == true ? url : url.deletingLastPathComponent()
-    }
-
-    private func isInsideUserHome(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let home = Self.realUserHomePath
-        return path == home || path.hasPrefix(home + "/")
     }
 
     private func currentInsertionLocation() -> URL? {
@@ -412,24 +141,6 @@ class FinderSync: FIFinderSync {
         return URL(fileURLWithPath: path.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    // MARK: - File creation
-
-    private func createFile(in directoryURL: URL, as kind: DocumentKind) throws -> URL {
-        let standardizedDirectoryURL = directoryURL.standardizedFileURL
-
-        var candidate = standardizedDirectoryURL.appendingPathComponent("\(kind.baseName).\(kind.fileExtension)")
-        var counter = 0
-
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            counter += 1
-            let padded = String(format: "%04d", counter)
-            candidate = standardizedDirectoryURL.appendingPathComponent("\(kind.baseName)_\(padded).\(kind.fileExtension)")
-        }
-
-        try kind.initialContents.write(to: candidate, options: .atomic)
-        return candidate
-    }
-
     // MARK: - File presentation
 
     private func presentCreatedFile(_ fileURL: URL) {
@@ -439,14 +150,8 @@ class FinderSync: FIFinderSync {
         }
     }
 
-    private func activeDocumentKinds() -> [DocumentKind] {
-        let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) ?? .standard
-        return DocumentKind.enabledKinds(using: defaults)
-    }
-
     private func kind(forMenuTitle title: String) -> DocumentKind? {
-        activeDocumentKinds().first { $0.menuTitle == title }
-            ?? DocumentKind.allCases.first { $0.menuTitle == title }
+        DocumentKind.allCases.first { $0.menuTitle == title }
     }
 
     private func symbolImage(named symbolName: String) -> NSImage? {

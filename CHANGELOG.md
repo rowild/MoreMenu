@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Authorize shared preferences with the signing Team-ID-prefixed App Group. The installed app's repeated AppData prompt was traced to an unauthorized `group.GMX.MoreMenu` container, despite Apple Development signing. This supersedes the earlier signing-only diagnosis below.
+- Create new files exclusively and retry filename collisions without replacing existing data.
+- Reject unresolved target metadata rather than creating in a guessed parent folder; show creation errors.
+- Preserve consent and preferences during local upgrades, verify staged signatures, and restore the previous app if migration or registration fails.
+
+### Changed
+
+- Share one file-type catalog and preference contract between app and extension.
+- Add behavioral Swift tests, installer/signature tests, a shared Xcode test scheme, and CI checks.
+- Require certificate-backed signing for local packages; public releases require Developer ID signing and notarization credentials.
+- Use the Finder Sync extension-management API for settings navigation and label file-type checkboxes for accessibility.
+- Desktop-specific behavior remains deferred.
+
 ## 1.2.2 - 2026-05-11
 
 ### Fixed

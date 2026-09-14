@@ -96,6 +96,10 @@ Every guess costs the user:
 
 ---
 
+## Historical investigation
+
+The following records earlier approaches. For current behavior, authorization, and version-specific settings navigation, use the Current implementation section and DEVELOPER.md.
+
 ## Key Findings
 
 ### 1. Quick Actions / Automator / Shortcuts do NOT work on empty space
@@ -245,65 +249,24 @@ Every guess costs the user:
 
 ---
 
-## Current Implementation (1.2.1+)
+## Current implementation and verification
 
-1. The project contains two targets:
-   - Host app (settings UI)
-   - Finder Sync Extension
-2. `FinderSync.swift`:
-   - Registers filtered visible top-level home subfolders once in `init()` and never touches `directoryURLs` again. It intentionally avoids `/`, the real home root, `~/Library`, `~/Applications`, and package directories. Pinned by `FinderSyncInvariantTests`.
-   - Reads enabled file types from shared defaults in the App Group
-   - Adds menu items only for the enabled file types
-   - Creates `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
-   - Falls back to Finder's insertion location for empty-space clicks
-   - Writes directly to the target URL. No bookmark handling, no `startAccessingSecurityScopedResource()`, no home/non-home fast path.
-3. `ContentView.swift`:
-   - Lets the user enable or disable MoreMenu commands in Finder
-   - Lets the user toggle individual file types via checkboxes
-   - Opens the system Finder Extensions settings page
-4. Local installation flow:
-   - `./scripts/install-local.sh`
-   - installs to `~/Applications`
-   - registers the embedded Finder extension
-   - purges legacy `authorizedFolderRecords` / `sharedAuthorizedFolderEntries` state and resets stale `SystemPolicyAppData` TCC for both bundle IDs
-   - restarts Finder
-5. Shared settings:
-   - App Group identifier: `group.GMX.MoreMenu`
-   - Shared keys:
-     - `finderMenuEnabled`
-     - `enabledDocumentKeys`
-6. Enablement UI:
-   - **System Settings → Privacy & Security → Extensions → Finder Extensions**
+Read [DEVELOPER.md](DEVELOPER.md) before changing signing, App Groups, installation, file creation, or monitored folders. It is the current source for those contracts and their verified evidence.
 
-### Entitlements
+- Host and extension share `MoreMenu/Shared` sources: document catalog, preferences, file creation, target resolution, and home-directory policy.
+- Both products use the App Group `QN24ZH7M6W.GMX.MoreMenu`, authorized by the matching certificate-backed signing Team ID. Local builds reject ad-hoc signing.
+- Preserve consent during upgrades. Migrate the two legacy preferences through the signed host import command; retain old data and never read the unauthorized legacy group from the extension.
+- Use exclusive file creation and retry only filename collisions. Preserve existing contents and propagate other failures.
+- Monitor filtered visible top-level home folders once at initialization. Exclude home/filesystem roots, Library, Applications, and packages. External volumes remain out of scope.
+- Desktop-specific behavior is deferred at the user's request. Keep the existing fallback unchanged until that investigation resumes.
+- Validate with `./scripts/test.sh`, then inspect a signed Release build. Reboot/Finder UI behavior requires live manual validation; passing unit tests alone is insufficient.
+- The app opens Finder's extension-management interface through `FIFinderSyncController.showExtensionManagementInterface()`. Settings paths vary by macOS version.
 
-Host app:
-- `app-sandbox`, `application-groups`
+### Corrected permission diagnosis (2026-09-14)
 
-Finder Sync extension:
-- `app-sandbox`, `application-groups`
-- `com.apple.security.temporary-exception.files.home-relative-path.read-write` = `/` — grants the extension sandbox capability to create files anywhere under the user's home folder. The leading `/` is the home root, not the filesystem root. Writes to `/Volumes/*` are denied by the sandbox and surface as a logged error plus `NSSound.beep()`.
+The installed 1.2.1 app was already Apple-Development-signed. `containermanagerd` rejected `group.GMX.MoreMenu` because the signature did not authorize that group. TCC subsequently prompted for SystemPolicyAppData with a decision tied to the running process. Apple's documentation describes this consent as per-instance. Stable signing alone and narrower monitoring do not fix unauthorized group membership.
 
-### Scope: home-only, not filesystem-wide
-
-External drives under `/Volumes/*` are intentionally unsupported in this build. FiScript ships `temporary-exception.files.absolute-path.read-write = /` on the App Store for wider scope, but that entitlement only works silently under a stable code signature (Developer ID or App Store). This project currently prefers Apple Development signing for local installs and falls back to ad-hoc signing (`CODE_SIGNING_ALLOWED=NO` + post-build `codesign --sign -`) only when no identity is available. Narrowing the entitlement and monitored Finder Sync scopes matches what the local build can actually deliver without recurring AppData prompts.
-
-### Historical notes
-
-- **1.1.5–1.1.7**: implemented external-drive access using security-scoped bookmarks handed from host to extension through an App Group. Deleted entirely in 1.2.0.
-- **1.2.0**: first attempted `absolute-path = /` entitlement to match FiScript. Shipped but still exhibited the TCC prompt on every reinstall and missing menu items on `/Volumes/*`. Post-install investigation showed the root cause was ad-hoc signing, not the entitlement set.
-- **1.2.1**: narrowed to `home-relative-path = /`, corrected the TCC reset service in `install-local.sh` (`SystemPolicyAppData`, not `SystemPolicyAppBundles`), documented the signing-level limitation.
-- **Unreleased**: stopped monitoring `/` with Finder Sync after TCC showed `SystemPolicyAppData` attached to the boot-time extension process. MoreMenu now monitors filtered home subfolders and clears stale AppData TCC state during local install.
-
-Full research and reasoning: [.claude/plans/0004_new_research_on_rightclick_permission.md](.claude/plans/0004_new_research_on_rightclick_permission.md) §0, §11, §12.
-
-### Key Swift API Reference
-- `FIFinderSyncController.default()` — singleton controller
-- `directoryURLs()` / `monitorLocalDirectoryOnly()` — scope definition
-- `menu(for:)` — return custom `NSMenu` for context
-- `NSMenuItem(title:action:keyEquivalent:)` — create menu item
-- `NSMenuItem.target` and `NSMenuItem.action` — wire up the handler
-- `FileManager.default.createFile(atPath:contents:attributes:)` — create the file
+The earlier investigation below/above and `.claude/plans/` are historical evidence, not current authorization guidance. Keep the conservative monitored-directory policy while diagnosing each privacy service independently.
 
 ---
 

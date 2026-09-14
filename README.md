@@ -7,7 +7,7 @@ Instead of digging through `Services` or another submenu, you can create a file 
 ## What It Does
 
 - adds new-file commands to Finder's top-level context menu
-- works on empty space in a Finder window, on the Desktop, and on a selected file or folder
+- works on empty space in a Finder window and on a selected file or folder
 - creates the new file in the current location
 - opens the created file right away in the default app for that file type
 - auto-increments names: `untitled.ext`, `untitled_0001.ext`, `untitled_0002.ext`, and so on
@@ -60,7 +60,6 @@ Built-in file types stay enabled by default. The larger web and framework-orient
 Right-click in Finder and choose the file type you want:
 
 - inside a Finder window
-- on the Desktop
 - on a file or folder
 
 MoreMenu creates the file in that location and immediately opens it in the app currently assigned to that extension.
@@ -74,8 +73,8 @@ MoreMenu keeps those commands at the first menu level and opens the result immed
 ## Setup
 
 1. Install `MoreMenu.app`
-2. Open `System Settings -> Privacy & Security -> Extensions -> Finder Extensions`
-3. Enable `MoreMenu`
+2. Open MoreMenu and click **Open Finder Extension Settings**
+3. Enable the MoreMenu extension in the interface macOS opens
 
 After that, right-click in Finder and choose the file type you want.
 
@@ -83,15 +82,17 @@ After that, right-click in Finder and choose the file type you want.
 
 MoreMenu creates files inside visible top-level folders in your Home folder — for example `~/Desktop`, `~/Documents`, `~/Downloads`, and their subfolders. It intentionally does not monitor `~/Library` or `~/Applications`, because those locations can make macOS classify the Finder extension as accessing other apps' data at login.
 
-External drives under `/Volumes/*` are **not** supported in this build. MoreMenu items should be hidden there. Supporting `/Volumes/*` cleanly on macOS Tahoe requires a signed Developer ID build; see [DEVELOPER.md](DEVELOPER.md) if you're interested in the technical reason.
+External drives under `/Volumes/*` are **not** supported in this build.
 
-## First-Install Prompt
+Direct Desktop background clicks, including iCloud-managed Desktop behavior, are under investigation and are not part of the current reliability fixes. Opening the Desktop folder in a Finder window remains a separate workflow.
 
-The current local build avoids the AppData prompt by keeping the Finder Sync monitored scope away from app-data roots. If macOS shows a "MoreMenu.app would like to access data from other apps" prompt after install or restart, that is a bug.
+## Local Installation And Updates
 
-For local installs, `scripts/install-local.sh` uses a free `Apple Development` signing identity when one is available in your keychain. That gives macOS a stable app identity without requiring a paid Developer ID certificate.
+Run `./scripts/install-local.sh` from this repository. The installer requires an Apple Development or Developer ID signing identity for the configured developer team. It builds and verifies the app before replacement, preserves existing permission decisions, and imports your previous file-type selections without overwriting settings already saved by the new version.
 
-If the app is installed from an older ad-hoc-signed DMG, unrelated one-time privacy prompts may still appear after an update because macOS can only identify that exact build.
+The app and extension now share a certificate-authorized App Group. This fixes the configuration behind the repeated “access data from other apps” prompt identified on the development Mac. Normal macOS folder-access prompts are separate and may still appear when required.
+
+The installer leaves the old preferences intact. Installing a DMG manually does not run this migration; configure your file types in MoreMenu if needed. Signing and distribution details are in [DEVELOPER.md](DEVELOPER.md).
 
 ## Notes
 

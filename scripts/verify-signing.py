@@ -20,7 +20,7 @@ def validate_signature(details, entitlements, group, identifier, *, extension):
     expected = {"com.apple.security.app-sandbox": True,
                 "com.apple.security.application-groups": [group]}
     if extension:
-        expected["com.apple.security.temporary-exception.files.home-relative-path.read-write"] = ["/"]
+        expected["com.apple.security.temporary-exception.files.absolute-path.read-write"] = ["/"]
     if entitlements != expected:
         raise ValueError(f"Unexpected entitlements: expected {expected}, received {entitlements}")
 

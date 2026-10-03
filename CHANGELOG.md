@@ -2,20 +2,37 @@
 
 ## Unreleased
 
+### Added
+
+- **The menu now works everywhere in Finder:** on the Desktop background, in windows rooted at the home folder, in any folder on the startup disk, and on external and network drives. The extension monitors `/` plus every mounted volume and updates the set when a drive is mounted, renamed, or unmounted. A drive is released before it unmounts, so MoreMenu cannot block ejecting it.
+- Each Finder menu request is logged with its menu kind and target, so a missing menu can be told apart from a skipped callback.
+
 ### Fixed
 
-- Authorize shared preferences with the signing Team-ID-prefixed App Group. The installed app's repeated AppData prompt was traced to an unauthorized `group.GMX.MoreMenu` container, despite Apple Development signing. This supersedes the earlier signing-only diagnosis below.
+- **Repeated privacy prompts.** Three causes were found and removed:
+  - Shared preferences now use the Team-ID-prefixed App Group `QN24ZH7M6W.GMX.MoreMenu`, which the signing certificate authorizes. The old `group.GMX.MoreMenu` container was unauthorized, so macOS asked "access data from other apps" again for every extension process.
+  - Stored privacy answers were bound to the hashes of old ad-hoc builds. Answers given to a certificate-signed build stay valid across rebuilds signed with the same certificate.
+  - `test.sh` unregisters its unsigned test build from Launch Services and PlugInKit. Stray copies with the same bundle IDs could be loaded by Finder under a different code identity.
+- A right-click alone can no longer start a folder-privacy check. The menu is built without reading file metadata; the destination folder is resolved only after a command is chosen.
+- No menu in the Documents column of a home-rooted window, and none on the Desktop background. Finder did not consult the extension there while it monitored only top-level home folders.
 - Create new files exclusively and retry filename collisions without replacing existing data.
 - Reject unresolved target metadata rather than creating in a guessed parent folder; show creation errors.
 - Preserve consent and preferences during local upgrades, verify staged signatures, and restore the previous app if migration or registration fails.
 
 ### Changed
 
-- Share one file-type catalog and preference contract between app and extension.
+- The extension sandbox allows writes on every volume (`temporary-exception.files.absolute-path.read-write = /`, previously home only). Read-only locations report an error after the click instead of hiding the menu.
+- Full Disk Access for MoreMenu.app is the recommended setup. With it enabled, the extension created files on the Desktop and in Downloads without any prompt (verified on macOS 26.6.2). Without it, macOS asks once per location type.
+- This reverses the 1.2.2 narrowing below. That change was based on a misdiagnosis of the AppData prompt, whose real cause was the unauthorized App Group.
+- Share one file-type catalog, preference contract, and monitored-volume policy between app and extension.
 - Add behavioral Swift tests, installer/signature tests, a shared Xcode test scheme, and CI checks.
 - Require certificate-backed signing for local packages; public releases require Developer ID signing and notarization credentials.
 - Use the Finder Sync extension-management API for settings navigation and label file-type checkboxes for accessibility.
-- Desktop-specific behavior remains deferred.
+
+### Not yet verified
+
+- After a restart, that the "access data from other apps" prompt stays away while `/` is monitored.
+- On an external drive: adding the drive when it is connected, creating a file on it, and ejecting it.
 
 ## 1.2.2 - 2026-05-11
 

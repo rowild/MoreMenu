@@ -8,7 +8,7 @@
 	<array>
 		<string>QN24ZH7M6W.GMX.MoreMenu</string>
 	</array>
-	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
 	<array>
 		<string>/</string>
 	</array>

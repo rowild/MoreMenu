@@ -253,12 +253,12 @@ The following records earlier approaches. For current behavior, authorization, a
 
 Read [DEVELOPER.md](DEVELOPER.md) before changing signing, App Groups, installation, file creation, or monitored folders. It is the current source for those contracts and their verified evidence.
 
-- Host and extension share `MoreMenu/Shared` sources: document catalog, preferences, file creation, target resolution, and home-directory policy.
+- Host and extension share `MoreMenu/Shared` sources: document catalog, preferences, file creation, target resolution, and monitored-volume policy.
 - Both products use the App Group `QN24ZH7M6W.GMX.MoreMenu`, authorized by the matching certificate-backed signing Team ID. Local builds reject ad-hoc signing.
 - Preserve consent during upgrades. Migrate the two legacy preferences through the signed host import command; retain old data and never read the unauthorized legacy group from the extension.
 - Use exclusive file creation and retry only filename collisions. Preserve existing contents and propagate other failures.
-- Monitor filtered visible top-level home folders once at initialization. Exclude home/filesystem roots, Library, Applications, and packages. External volumes remain out of scope.
-- Desktop-specific behavior is deferred at the user's request. Keep the existing fallback unchanged until that investigation resumes.
+- Monitor `/` plus every visible mounted volume, and update the set on mount, unmount, and rename. Release a volume on `willUnmount`. See DEVELOPER.md for the 2026-10-03 evidence (Desktop background and home-rooted windows need `/`).
+- Build the menu without file-metadata reads; resolve the destination only in the menu action.
 - Validate with `./scripts/test.sh`, then inspect a signed Release build. Reboot/Finder UI behavior requires live manual validation; passing unit tests alone is insufficient.
 - The app opens Finder's extension-management interface through `FIFinderSyncController.showExtensionManagementInterface()`. Settings paths vary by macOS version.
 

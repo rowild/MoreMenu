@@ -39,7 +39,7 @@ class SigningTests(unittest.TestCase):
     def entitlements(self):
         return {"com.apple.security.app-sandbox": True,
                 "com.apple.security.application-groups": [self.group],
-                "com.apple.security.temporary-exception.files.home-relative-path.read-write": ["/"]}
+                "com.apple.security.temporary-exception.files.absolute-path.read-write": ["/"]}
 
     def test_matching_certificate_and_entitlements_are_accepted(self):
         verify = load_module("verify-signing")
@@ -57,7 +57,7 @@ class SigningTests(unittest.TestCase):
         verify = load_module("verify-signing")
         for key, value in [("com.apple.security.application-groups", ["group.GMX.MoreMenu"]),
                            ("com.apple.security.app-sandbox", False),
-                           ("com.apple.security.temporary-exception.files.absolute-path.read-write", ["/"])]:
+                           ("com.apple.security.temporary-exception.apple-events", ["com.apple.finder"])]:
             entitlements = self.entitlements()
             entitlements[key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):

@@ -4,9 +4,9 @@
 //
 //  Created by Robert Wildling on 2026-04-07.
 //
-//  File creation is limited to the user home by the extension sandbox entitlement.
-//  Shared preferences use a Team-ID-prefixed App Group authorized by the signer.
-//  See DEVELOPER.md for the separate monitoring, sandbox, and TCC constraints.
+//  The sandbox entitlement allows writes on every volume; POSIX permissions and
+//  macOS privacy (TCC) still apply. Shared preferences use a Team-ID-prefixed
+//  App Group authorized by the signer. See DEVELOPER.md for the constraints.
 
 import Cocoa
 import FinderSync
@@ -14,18 +14,47 @@ import OSLog
 
 class FinderSync: FIFinderSync {
     private let logger = Logger(subsystem: "GMX.MoreMenu.MoreMenuExtension", category: "FinderSync")
-    private let scope = HomeDirectoryScope.current
     private let fileCreator = DocumentFileCreator()
     private var currentMenuKind: FIMenuKind = .contextualMenuForContainer
+    private var volumeObservers: [NSObjectProtocol] = []
 
     override init() {
         super.init()
-        FIFinderSyncController.default().directoryURLs = scope.monitoredDirectoryURLs()
+        updateMonitoredDirectories()
+        observeVolumeChanges()
+    }
+
+    deinit {
+        volumeObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+    }
+
+    // MARK: - Monitored directories
+
+    private func observeVolumeChanges() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
+            volumeObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.updateMonitoredDirectories()
+            })
+        }
+        volumeObservers.append(center.addObserver(forName: NSWorkspace.willUnmountNotification, object: nil, queue: .main) { [weak self] notification in
+            let volume = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL
+            self?.updateMonitoredDirectories(excluding: volume.map { [$0] } ?? [])
+        })
+    }
+
+    private func updateMonitoredDirectories(excluding unmountingVolumes: [URL] = []) {
+        let mountedVolumes = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil, options: [.skipHiddenVolumes]) ?? []
+        let monitoredURLs = FinderMonitoringScope.directoryURLs(mountedVolumes: mountedVolumes, excluding: unmountingVolumes)
+        FIFinderSyncController.default().directoryURLs = monitoredURLs
+        logger.log("Monitoring: \(monitoredURLs.map(\.path).sorted().joined(separator: ", "), privacy: .public)")
     }
 
     // MARK: - FIFinderSync overrides
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
+        // No line logged for a right-click means Finder never consulted the extension.
+        logger.log("menu(for:) kind=\(menuKind.rawValue, privacy: .public) target=\(FIFinderSyncController.default().targetedURL()?.path ?? "nil", privacy: .public)")
         guard menuKind == .contextualMenuForContainer || menuKind == .contextualMenuForItems else {
             return NSMenu(title: "")
         }
@@ -33,15 +62,10 @@ class FinderSync: FIFinderSync {
         let menu = NSMenu(title: "")
         let enabledKinds = MenuPreferences.shared.activeKinds
 
-        guard let target = targetDirectory(for: menuKind), !enabledKinds.isEmpty else {
-            return menu
-        }
-
-        // Hide the menu in locations the sandbox entitlement can't reach:
-        // filesystem root `/`, `/Volumes/*`, other users' homes, `/tmp`,
-        // `/Applications`, etc. The user gets no false affordance for file
-        // creation that would silently fail.
-        guard scope.contains(target) else {
+        // Path checks only. Reading metadata in a protected folder can raise a
+        // privacy prompt on a mere right-click; folder resolution waits for the click.
+        // Read-only locations surface as a creation error after the click.
+        guard !enabledKinds.isEmpty, targetLocation(for: menuKind) != nil else {
             return menu
         }
 
@@ -78,12 +102,6 @@ class FinderSync: FIFinderSync {
             return
         }
 
-        guard scope.contains(targetURL) else {
-            logger.error("Refusing to create file outside user home: \(targetURL.path, privacy: .public)")
-            NSSound.beep()
-            return
-        }
-
         logger.log("Creating \(kind.fileExtension, privacy: .public) file in: \(targetURL.path, privacy: .public)")
 
         do {
@@ -108,17 +126,24 @@ class FinderSync: FIFinderSync {
 
     // MARK: - Target directory resolution
 
-    private func targetDirectory(for menuKind: FIMenuKind) -> URL? {
+    /// The clicked item or folder, without touching the disk. Safe inside `menu(for:)`.
+    private func targetLocation(for menuKind: FIMenuKind) -> URL? {
         if let targetedURL = FIFinderSyncController.default().targetedURL() {
-            do {
-                return try TargetDirectoryResolver.directory(for: targetedURL)
-            } catch {
-                logger.error("Could not resolve target directory: \(error.localizedDescription, privacy: .public)")
-                return nil
-            }
+            return targetedURL
         }
         guard menuKind == .contextualMenuForContainer else { return nil }
         return currentInsertionLocation()
+    }
+
+    /// Reads file metadata, so call it only from a menu action.
+    private func targetDirectory(for menuKind: FIMenuKind) -> URL? {
+        guard let location = targetLocation(for: menuKind) else { return nil }
+        do {
+            return try TargetDirectoryResolver.directory(for: location)
+        } catch {
+            logger.error("Could not resolve target directory: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     private func currentInsertionLocation() -> URL? {

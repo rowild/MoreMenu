@@ -8,7 +8,7 @@
 ./scripts/install-local.sh
 ```
 
-`test.sh` runs script tests and standalone macOS unit tests. The tests compile the same Shared sources as the app and extension, without launching the host app or running the installer. The shared Xcode scheme also builds the app and extension to catch integration errors. Xcode 16.2 or later is required; the deployment target remains macOS 14.
+`test.sh` runs script tests and standalone macOS unit tests. The tests compile the same Shared sources as the app and extension, without launching the host app or running the installer. The shared Xcode scheme also builds the app and extension to catch integration errors. Xcode registers that unsigned build with Launch Services, so `test.sh` unregisters its build products on exit; otherwise Finder could load the test copy and TCC would see a different code identity. Xcode 16.2 or later is required; the deployment target remains macOS 14.
 
 `build-app.sh` builds a universal Release app, signs the extension before its containing app, and verifies both signatures and entitlement sets. By default it selects an available Apple Development identity. Override with `MOREMENU_CODE_SIGN_IDENTITY`. It rejects ad-hoc signatures and signing teams that do not match the App Group. No app is installed by this command.
 
@@ -21,7 +21,7 @@ Build/test output is under `.build/` by default. `MOREMENU_TEST_DERIVED_DATA` ov
 - `MoreMenu/Shared/DocumentKind.swift`: the 19 persistent file-type identifiers, UI/menu titles, extensions, categories, and initial contents.
 - `Shared/MenuPreferences.swift`: the shared defaults contract and idempotent legacy import.
 - `Shared/DocumentFileCreator.swift`: exclusive filename creation with numbered retries.
-- `Shared/HomeDirectoryScope.swift`: home-boundary and monitored-directory policy.
+- `Shared/FinderMonitoringScope.swift`: the monitored set — the boot volume root plus every mounted volume.
 - `Shared/TargetDirectoryResolver.swift`: file-versus-folder resolution; failed metadata reads propagate as errors.
 - `MoreMenu/SettingsStore.swift`: observable settings shared by all settings windows.
 - `MoreMenuExtension/FinderSync.swift`: Finder callbacks, target acquisition, menu presentation, file opening, and error feedback.
@@ -44,15 +44,19 @@ Sources: [App Group authorization](https://developer.apple.com/documentation/xco
 
 ### Sandbox write capability
 
-The extension retains `com.apple.security.temporary-exception.files.home-relative-path.read-write = ["/"]`. In this entitlement, `/` means the user's home. The host has no broad file-write entitlement. External volumes remain out of scope. This task does not expand write capability or add Apple Events permissions.
+The extension uses `com.apple.security.temporary-exception.files.absolute-path.read-write = ["/"]`, so the sandbox allows writes on every volume. POSIX permissions and TCC still apply. The host has no file-write entitlement. App extensions must be sandboxed, so this temporary exception is the sandbox capability for local and Developer ID builds; it is not suitable for the Mac App Store.
 
 ### Folder privacy and Finder monitoring
 
 Sandbox capability does not override macOS privacy decisions. Normal folder-access permissions and App Group authorization must be diagnosed separately.
 
-Finder monitoring remains limited to visible top-level home subfolders, excluding `Library`, `Applications`, and packages. Set `directoryURLs` exactly once at extension initialization, using `HomeDirectoryScope.monitoredDirectoryURLs()`. Keep this conservative policy; the old notes attributing every AppData prompt to monitoring scope are not sufficient evidence to change it.
+Finder consults a Finder Sync extension only for clicks inside its monitored folders. On 2026-10-03 (macOS 26.6.2), with only top-level home folders monitored, Finder did not call `menu(for:)` for the Desktop background or for a column-view window rooted at the home folder. BetterZip, whose extension monitors all mounted volumes, appeared in both menus.
 
-`FinderSyncInvariantTests` exercises the actual folder-selection policy against temporary filesystem fixtures and retains one structural guard for the single registration assignment.
+The extension therefore monitors `/` plus every visible mounted volume (`FinderMonitoringScope.directoryURLs`). `/` does not cover other mounts, so each volume is listed explicitly. The set is recomputed on mount, unmount, and rename. A volume is released on `willUnmount`, so Finder Sync cannot block ejecting it.
+
+The May 2026 note that blamed `/` monitoring for the AppData prompt predates the App Group fix. Confirm with a reboot test that the prompt stays away.
+
+`FinderSyncInvariantTests` covers the monitored-set policy and guards two structural rules: one `directoryURLs` assignment, and no file-metadata reads while building the menu.
 
 ## Preference migration
 
@@ -78,11 +82,11 @@ Files use `untitled.ext`, `untitled_0001.ext`, and subsequent numbers. Rich text
 
 [Apple's exclusive-write documentation](https://developer.apple.com/documentation/foundation/nsdata/writingoptions/withoutoverwriting)
 
-## Desktop work is deferred
+## Desktop
 
-Desktop background and cloud-managed Desktop behavior are explicitly outside this patch. The existing AppleScript insertion-location fallback is retained; its missing Apple Events sandbox authorization is a known limitation, not a supported Desktop guarantee. Do not broaden monitored roots or add automation entitlements as part of these reliability fixes.
+`menu(for:)` logs the menu kind and the targeted URL. No log line for a right-click means Finder did not consult the extension. A line with `target=nil` means MoreMenu returned an empty menu. For a desktop icon, Finder reported `~/Desktop` as the target.
 
-For the later investigation, log whether Finder calls `menu(for:)`, the menu kind, and whether a target URL exists. Distinguish callback suppression from MoreMenu returning an empty menu before proposing a fix.
+The AppleScript insertion-location fallback cannot work: the extension lacks Apple Events entitlements, and tccd logs that refusal.
 
 ## Settings navigation
 
@@ -119,7 +123,7 @@ The workflow uses a temporary keychain and removes its signing material afterwar
 1. Run `./scripts/test.sh`; include concurrent creation, preservation, RTF, settings migration, scope policy, signing rejection, and installer rollback checks.
 2. Build and verify a signed app. Inspect both products' Team ID, App Group, sandbox entitlement, and hardened runtime.
 3. After an actual local upgrade, confirm prior selections survive and only the intended installed extension is used.
-4. Test file creation and errors inside supported Finder folders, and verify out-of-home locations have no commands.
+4. Test file creation on the Desktop background, in home-rooted windows, and on an external volume. Check the error for a read-only location, and confirm that ejecting a drive still works.
 5. Relaunch the host/extension and reboot. Confirm the logs authorize the group and the repeated AppData prompt does not return. A successful build or one launch does not establish reboot behavior.
 6. Check the settings-management button and error dialog on macOS 14, 15, and 26 before claiming compatibility beyond compilation.
 
